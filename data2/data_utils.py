@@ -1,0 +1,362 @@
+import torch
+from torch_geometric.data import Data, DataLoader
+import os
+import cv2
+import meshio
+import numpy as np
+import networkx as nx
+import matplotlib.tri as tri
+import matplotlib.pyplot as plt
+from scipy.sparse import coo_matrix
+from scipy.spatial import distance_matrix
+
+
+def compute_edges_img(img):
+    edge_lower_tresh = 50
+    edge_upper_tresh = 200
+    running_img = img.copy()
+    running_img *= 255
+    running_img = running_img.astype(np.uint8)
+    edges = cv2.Canny(running_img, edge_lower_tresh, edge_upper_tresh)
+    return edges
+
+
+def create_geo_file(img, lc1=0.2, lc2=0.1, skip=1, geo_file="img.geo", refined=True):
+    edges = compute_edges_img(img.astype(float))
+    edges = np.array(np.where(edges)).T
+    edges = edges * 2 / (img.shape[0] - 1) - 1
+
+    obj_center = np.mean(edges, axis=0)
+    inner_edges = 2/3 * obj_center + 1/3 * edges
+
+    with open(geo_file, "w") as fid:
+        fid.write("lc1 = %0.3f; \n" % lc1)
+        fid.write("lc2 = %0.3f; \n\n" % lc2)
+
+        fid.write("// border points of rectangle \n")
+        fid.write("Point(1) = {-1.0, -1.0, 0.0, lc1}; \n")
+        fid.write("Point(2) = { 1.0, -1.0, 0.0, lc1}; \n")
+        fid.write("Point(3) = { 1.0,  1.0, 0.0, lc1}; \n")
+        fid.write("Point(4) = {-1.0,  1.0, 0.0, lc1}; \n\n")
+
+        if refined:
+            fid.write("// control points on the border of object \n")
+            p_idx = 5
+            EPS = 0.001
+            for e in edges[::skip]:
+                if e[1] == -1:
+                    fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, e[1] + EPS, e[0]))
+                elif e[1] == 1:
+                    fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, e[1] - EPS, e[0]))
+                elif e[0] == -1:
+                    fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, e[1], e[0] + EPS))
+                elif e[0] == 1:
+                    fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, e[1], e[0] - EPS))
+                else:
+                    fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, e[1], e[0]))
+                    p_idx += 1
+            fid.write("\n")
+            for e in inner_edges[::skip * 2]:
+                fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc1}; \n" % (p_idx, e[1], e[0]))
+                p_idx += 1
+
+        fid.write("// boundary lines of rectangle \n")
+        fid.write("Line(1) = {1, 2}; \n")
+        fid.write("Line(2) = {3, 2}; \n")
+        fid.write("Line(3) = {3, 4}; \n")
+        fid.write("Line(4) = {4, 1}; \n\n")
+
+        fid.write("Curve Loop(1) = {4, 1, -2, 3}; \n")
+        fid.write("Plane Surface(1) = {1}; \n\n")
+
+        if refined:
+            fid.write("// control points mesh size \n")
+            for p in range(p_idx, 5, -1):
+                fid.write("Point{%d} In Surface{1}; \n" % (p - 1))
+
+
+def geo2vtk(geo_file, vtk_file=None):
+    if vtk_file is None:
+        vtk_file = geo_file[:-4] + ".vtk"
+
+    str_cmd = "gmsh " + geo_file + " -2 -o " + vtk_file
+    os.system(str_cmd)
+
+
+### vtk to obj ####
+def vtk2obj(vtk_file, obj_file=None, data=None):
+    mesh = meshio.read(vtk_file)
+    pnts = mesh.points
+    if data is not None:
+        assert all(pnts[:, 2] == 0.)
+        pnts[:, 2] = data
+
+    faces = [c for c in mesh.cells if c.type == "triangle"][0].data
+    if obj_file is None:
+        obj_file = vtk_file[:-4] + ".obj"
+    file_name = os.path.basename(obj_file)
+    with open(obj_file, 'w') as fid:
+        # print header
+        fid.write("####\n")
+        fid.write("# OBJ File Generated from vtk\n")
+        fid.write("#\n")
+        fid.write("####\n")
+
+        fid.write("# %s \n" % file_name)
+        fid.write("#\n")
+        fid.write("# Vertices: %d \n" % (len(pnts)))
+        fid.write("# Faces: %d \n" % (len(faces)))
+        fid.write("#\n")
+        fid.write("#### \n\n")
+
+        # print vertices
+        for pnt in pnts:
+            fid.write("v %0.4f %0.4f %0.4f\n" % (pnt[0], pnt[1], pnt[2]))
+
+        fid.write("\n")
+        # print vertices
+        for face in faces:
+            fid.write("f %d %d %d\n" % (face[0] + 1, face[1] + 1, face[2] + 1))
+
+        fid.write("\n")
+        fid.write("# End of File")
+
+
+#### mesh functionalities ######
+def vtk_to_mesh(vtk_file):
+    mesh = meshio.read(vtk_file)
+    return mesh
+
+
+def plot_mesh(mesh, dims=2, node_labels=False, vals=None, with_colorbar=False):
+    if not isinstance(mesh.points, np.ndarray):
+        mesh.points = np.array(mesh.points)
+    nodes_x = mesh.points[:, 0]
+    nodes_y = mesh.points[:, 1]
+    if dims == 2:
+        elements_tris = [c for c in mesh.cells if c.type == "triangle"][0].data
+        #plt.figure(figsize=(8, 8))
+        if vals is None:
+            plt.triplot(nodes_x, nodes_y, elements_tris, alpha=0.9, color='r')
+        else:
+            triangulation = tri.Triangulation(nodes_x, nodes_y, elements_tris)
+            plt.tricontourf(triangulation, vals)
+            if with_colorbar: plt.colorbar()
+        if node_labels:
+            for i, (x, y) in enumerate(zip(nodes_x, nodes_y)):
+                plt.text(x, y, i)
+
+
+def cells_to_edges(cells):
+    edge_pairs = []
+    for cell in cells:
+        for p1, p2 in [(0, 1), (1, 2), (0, 2)]:
+            edge = sorted([cell[p1], cell[p2]])
+            if edge not in edge_pairs:
+                edge_pairs.append(edge)
+    return edge_pairs
+
+### Graph funcitonalities ###
+def mesh_to_graph(mesh, vals=None):
+    if not isinstance(mesh.points, np.ndarray):
+        mesh.points = np.array(mesh.points)
+
+    points = mesh.points
+    cells  = np.array([c.data for c in mesh.cells if c.type == 'triangle'][0])
+
+    if vals is None:
+        node_features = [(i, {"x": x, "y": y, "z": z}) for i, (x, y, z) in enumerate(points)]
+    else:
+        node_features = [(i, {"x": x, "y": y, "z": z, "val": val}) for i, ((x, y, z), val) in
+                         enumerate(zip(points, vals))]
+    edge_pairs = cells_to_edges(cells)
+
+    graph = nx.Graph()
+    graph.add_nodes_from(node_features)
+    graph.add_edges_from(edge_pairs)
+    return graph
+
+
+def plot_graph(graph, node_labels=False, color=None, color_feature=None):
+    if color_feature is not None:
+        color = graph_to_features(graph, color_feature)
+
+    plt.figure(figsize=(8, 8))
+    nx.draw(graph, with_labels=node_labels, node_color=color)
+
+
+def graph_to_cells(graph):
+    cells = []
+    for i in range(len(graph.nodes)):
+        i_neighbours = set(graph.adj.get(i))
+        for j in i_neighbours:
+            j_neighbours = set(graph.adj.get(j))
+            union_ij = i_neighbours.intersection(j_neighbours)
+            for k in union_ij:
+                cell = sorted([i, j, k])
+                if cell not in cells:
+                    cells.append(cell)
+    return cells
+
+
+def graph_to_points(graph):
+    n_nodes = len(graph.nodes)
+    points = [[graph.nodes.get(i)["x"],
+               graph.nodes.get(i)["y"],
+               graph.nodes.get(i)["z"]] for i in range(n_nodes)]
+    return points
+
+
+def graph_to_features(graph, key):
+    n_nodes = len(graph.nodes)
+    vals = [graph.nodes.get(i)[key] for i in range(n_nodes)]
+    return vals
+
+
+def graph_to_mesh(graph):
+    points = np.array(graph_to_points(graph))
+    cells = graph_to_cells(graph)
+    cells = [("triangle", np.array(cells))]
+    mesh = meshio.Mesh(points=points, cells=cells)
+    return mesh
+
+
+def expand_edge_connection(edges, k=2):
+    assert isinstance(edges, np.ndarray)
+    assert edges.shape[0] == 2
+
+    n_edges = edges.shape[1]
+    vertices_idx = np.unique(edges)
+    n_vertices = len(vertices_idx)
+    assert min(vertices_idx) == 0
+    assert max(vertices_idx) == n_vertices - 1
+    data = np.ones(n_edges * 2)
+    rows = np.concatenate([edges[0, :], edges[1, :]])
+    columns = np.concatenate([edges[1, :], edges[0, :]])
+    adj_matrix = coo_matrix((data, (rows, columns)), shape=(n_vertices, n_vertices))
+    adj_matrix = adj_matrix.toarray()
+    if k == 2:
+        new_adj_matrix = adj_matrix + np.matmul(adj_matrix, adj_matrix)
+    elif k == 3:
+        tmp2 = np.matmul(adj_matrix, adj_matrix)
+        new_adj_matrix = adj_matrix + tmp2 + np.matmul(tmp2, adj_matrix)
+    elif k == 4:
+        tmp2 = np.matmul(adj_matrix, adj_matrix)
+        tmp3 = np.matmul(tmp2, adj_matrix)
+        new_adj_matrix = adj_matrix + tmp2 + tmp3 + np.matmul(tmp3, adj_matrix)
+    else:
+        raise("error")
+
+    # set diagonal and lower diagonal values to 0, avoid counting edges twice.
+    np.fill_diagonal(new_adj_matrix, 0)
+    new_adj_matrix *= np.tri(*new_adj_matrix.shape)
+
+    new_edges = np.array(np.where(new_adj_matrix > 0))
+    return new_edges.T
+
+
+def points_to_neighbours(points, radius):
+    dist = distance_matrix(points, points)
+    dist += 2 * radius * np.tril(np.ones_like(dist)) # to avoid duplication later
+    neighbours = np.array(np.where(dist < radius))
+    return neighbours.T
+
+
+def mesh_to_edge_neighbours(graph_nodes, mesh_edges, mesh_cells, connection_type):
+    edge_neighbours = []
+    edges = [set(x) for x in mesh_edges]
+    if connection_type == "vertex":
+        for i, edge_i in enumerate(edges):
+            for j, edge_j in enumerate(edges[i+1:]):
+                if len(edge_i.intersection(edge_j)) > 0:
+                    if [i, j + i + 1] not in edge_neighbours:
+                        edge_neighbours.append([i, j + i + 1])
+    elif connection_type == "cell":
+        cells = [set(x) for x in mesh_cells]
+        for i, edge_i in enumerate(edges):
+            for j, edge_j in enumerate(edges[i+1:]):
+                if len(edge_i.intersection(edge_j)) > 0:
+                    if edge_i.union(edge_j) in cells:
+                        if [i, j + i + 1] not in edge_neighbours:
+                            edge_neighbours.append([i, j + i + 1])
+    else:
+        raise("connection_type %s is not defined." %connection_type)
+
+    return edge_neighbours
+
+
+def get_sdf_data_loader(n_objects, data_folder, batch_size, reversed_edge_already_included=False):
+    graph_data_list = []
+    print("preparing sdf data loader")
+    for i in range(n_objects):
+        graph_nodes = np.load(data_folder + "graph_nodes%d.npy" % i).astype(float)
+        x = graph_nodes.copy()
+        x[:, 2] = (x[:, 2] < 0).astype(float)
+        y = graph_nodes.copy()[:, 2]
+        y = y.reshape(-1, 1)
+        graph_cells = np.load(data_folder + "graph_cells%d.npy" % i).astype(int)
+        graph_cells = graph_cells.T
+        graph_edges = np.load(data_folder + "graph_edges%d.npy" % i).astype(int)
+        if not reversed_edge_already_included:
+            graph_edges = add_reversed_edges(graph_edges)
+        graph_edges = graph_edges.T
+        graph_data = Data(x=torch.from_numpy(x).type(torch.float32),
+                          y=torch.from_numpy(y).type(torch.float32),
+                          edge_index=torch.from_numpy(graph_edges).type(torch.long),
+                          face=torch.from_numpy(graph_cells).type(torch.long))
+        graph_data_list.append(graph_data)
+    train_data = DataLoader(graph_data_list, batch_size=batch_size)
+    return train_data
+
+
+def add_reversed_edges(edges):
+    edges_reversed = np.fliplr(edges)
+    edges = np.concatenate([edges, edges_reversed], axis=0)
+    return edges
+
+# def graph_to_pgdata(xgraph, ygraph, x_keys=("x", "y", "z"), y_keys=("val",)):
+#     x = [graph_to_features(xgraph, key) for key in x_keys]
+#     x = np.array(x).T
+#     y = [graph_to_features(ygraph, key) for key in y_keys]
+#     y = np.array(y).T
+#     cells = graph_to_cells(graph)
+#     edges = cells_to_edges(cells)
+#     edges = np.array(edges).T
+#     pgdata = Data(x=torch.from_numpy(x),
+#                   y=torch.from_numpy(y),
+#                   edge_index=torch.from_numpy(edges).type(torch.long))
+#     return pgdata
+
+
+if __name__ == "__main__":
+    graph_data_list = []
+    folder_name = "mesh_files/data1/"
+    for i in range(4):
+        geom_vtk_name = folder_name + "geom%d.vtk"%(i+1)
+        geom_mesh = vtk_to_mesh(geom_vtk_name)
+        geom_graph = mesh_to_graph(geom_mesh)
+
+        sdf_vtk_name = folder_name + "sdf%d.vtk"%(i+1)
+        sdf_mesh = vtk_to_mesh(sdf_vtk_name)
+        sdf_graph = mesh_to_graph(sdf_mesh)
+
+        plot_mesh(sdf_mesh)
+        plot_graph(sdf_graph)
+        plot_graph(sdf_graph, color_feature="z")
+
+        x = [graph_to_features(geom_graph, key) for key in ['x', 'y', 'z']]
+        x = np.array(x).T
+        y = [graph_to_features(sdf_graph, key) for key in ['z']]
+        y = np.array(y).T
+
+        assert graph_to_cells(geom_graph) == graph_to_cells(sdf_graph)
+        cells = graph_to_cells(geom_graph)
+        edges = cells_to_edges(cells)
+        edges = np.array(edges).T
+        graph_data = Data(x=torch.from_numpy(x).type(torch.float64),
+                          y=torch.from_numpy(y).type(torch.float64),
+                          edge_index=torch.from_numpy(edges).type(torch.long))
+
+        graph_data_list.append(graph_data)
+
+    #np.save("data/graph_data_list.npy", graph_data_list)
