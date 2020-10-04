@@ -3,11 +3,12 @@ from data2.data_utils import *
 
 
 class GraphData:
-    def __init__(self, graph_node, graph_edge, circle_radius=None, edge_length=None):
+    def __init__(self, graph_node, graph_edge, circle_radius=None, edge_length=None, edge_weight=None):
         self.graph_node = graph_node
         self.graph_edge = graph_edge
         self.circle_radius = circle_radius
         self.edge_length = edge_length
+        self.edge_weight = edge_weight
         self.check_sanity()
 
     def write_graph_features_to_file(self, graph_folder):
@@ -24,6 +25,9 @@ class GraphData:
             if self.circle_radius:
                 fid.write("radius of neighbourhood is %0.3f" % self.circle_radius)
 
+            if self.edge_weight:
+                fid.write("edge weight is computed as %s" % self.edge_weight)
+
     def check_sanity(self):
         if self.graph_node == "vertex":
             assert self.graph_edge in ["edge", "neighbour"], \
@@ -37,6 +41,11 @@ class GraphData:
                 "with `edge` as graph node, graph edges can only be set to `vertex` or `cell`"
         else:
             raise(IOError("graph node has to be `vertex` or `edge`."))
+
+        assert self.edge_weight is None or self.graph_node == "vertex", \
+            "only when graph nodes are `vertex`, edge weight is defined"
+        assert self.edge_weight is None or self.edge_weight in ["length"], \
+            "only `length` is supported for edge_weight"
 
     def generate_graph_data(self, n_geoms, mesh_folder, graph_folder=None):
         graph_folder = mesh_folder if graph_folder is None else graph_folder
@@ -68,6 +77,10 @@ class GraphData:
         np.save(graph_folder + "graph_cells" + name + ".npy", graph_cells)
         np.save(graph_folder + "graph_edges" + name + ".npy", graph_edges)
 
+        if self.edge_weight is not None:
+            edge_weights = compute_edge_weight(graph_nodes[:, :2], graph_edges, self.edge_weight)
+            np.save(graph_folder + "graph_weights" + name + ".npy", edge_weights)
+
     def generate_graph_from_edges(self, mesh_folder, graph_folder, name=""):
         sdf_mesh = meshio.read(mesh_folder + "sdf" + name + ".vtk")
         mesh_nodes = sdf_mesh.points
@@ -84,7 +97,6 @@ class GraphData:
         np.save(graph_folder + "graph_nodes" + name + ".npy", graph_nodes)
         np.save(graph_folder + "graph_cells" + name + ".npy", graph_cells)
         np.save(graph_folder + "graph_edges" + name + ".npy", graph_edges)
-
 
 
 

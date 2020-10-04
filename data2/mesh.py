@@ -5,7 +5,7 @@ import meshio
 
 # Todo: I don't like this. fix it
 sys.path.insert(1, 'C:/Users/amaleki/OneDrive - ANSYS, Inc/Projects/sdf-prediction/')
-from data.geoms import Rectangle, plot_sdf
+from data.geoms import Rectangle, Circle, plot_sdf
 
 
 class MeshData:
@@ -46,8 +46,11 @@ class MeshData:
         ty = np.random.random() * 1.0 - 0.5
 
         # create geometry from scipy model
-        if np.random.choice(self.geometries) == "Rectangle":
+        g = np.random.choice(self.geometries)
+        if g == "Rectangle":
             geom = Rectangle((l, w)).rotate(r).translate((tx, ty))
+        elif g == "Circle":
+            geom = Circle(l).translate((tx, ty))
         else:
             raise(NotImplementedError())
 

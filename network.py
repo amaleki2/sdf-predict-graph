@@ -60,14 +60,15 @@ class GCNet(torch.nn.Module):
         """"""
         x = data.x
         edge_index = data.edge_index
-        edge_weight = x.new_ones(edge_index.size(1))
+        #edge_weight = x.new_ones(edge_index.size(1))
+        edge_weight = data.edge_attr
 
         for i in range(len(self.convs) - 1):
             #edge_index, edge_weight = self.augment_adj(edge_index, edge_weight, x.size(0))
             x = self.convs[i](x, edge_index, edge_weight)
             x = self.act(x)
 
-        edge_index, edge_weight = self.augment_adj(edge_index, edge_weight, x.size(0))
+        #edge_index, edge_weight = self.augment_adj(edge_index, edge_weight, x.size(0))
         x = self.convs[-1](x, edge_index, edge_weight)
 
         return x

@@ -1,8 +1,10 @@
+import meshio
+import numpy as np
+import matplotlib.pyplot as plt
+from data2 import plot_mesh
+
 import torch
 import torch.nn as nn
-
-from network import GCNet
-from data2 import *
 
 
 def eikonal_loss(pred, xy, device='cuda'):
@@ -15,12 +17,13 @@ def eikonal_loss(pred, xy, device='cuda'):
 
 def train_model(model, train_data, lr_0=0.001, n_epoch=101,
                 loss_func=nn.L1Loss(), with_eikonal_loss=False,
-                print_every=10):
+                print_every=10, step_size=50, gamma=0.5):
+
     print("training begins")
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr_0, weight_decay=0.001)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.5)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
     running_loss_list = []
     for epoch in range(1, n_epoch):
         running_loss = 0
@@ -79,13 +82,18 @@ def plot_results(model, data, plot_every=-1):
             plot_mesh(mesh, vals=d.y.numpy()[:, 0])
             plt.show()
 
-n_objects, batch_size = 100, 1
-data_folder = "data2/dataset_1/graph1/"
-in_channels, out_channels = 3, 1
-hidden_channels = [16, 64, 128, 64, 16]
 
-model = GCNet(in_channels, hidden_channels, out_channels)
-train_data = get_sdf_data_loader(n_objects, data_folder, batch_size)
-loss_func = nn.L1Loss()
-train_model(model, train_data, lr_0=0.001, n_epoch=101, loss_func=loss_func)
-plot_results(model, train_data, plot_every=10)
+if __name__ == "__main__":
+    from data2 import get_sdf_data_loader
+    from network import GCNet
+
+    n_objects, batch_size, n_epoch = 100, 1, 100
+    in_channels, out_channels = 3, 1
+    hidden_channels = [16, 64, 128, 64, 16]
+    loss_func = nn.L1Loss()
+
+    data_folder = "data2/dataset_1/graph1/"
+    train_data = get_sdf_data_loader(n_objects, data_folder, batch_size, edge_wieght=True)
+    model = GCNet(in_channels, hidden_channels, out_channels)
+    train_model(model, train_data, lr_0=0.001, n_epoch=n_epoch, loss_func=loss_func)
+    plot_results(model, train_data, plot_every=5)

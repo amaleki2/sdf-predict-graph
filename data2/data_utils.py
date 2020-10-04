@@ -140,7 +140,7 @@ def plot_mesh(mesh, dims=2, node_labels=False, vals=None, with_colorbar=False):
             plt.triplot(nodes_x, nodes_y, elements_tris, alpha=0.9, color='r')
         else:
             triangulation = tri.Triangulation(nodes_x, nodes_y, elements_tris)
-            plt.tricontourf(triangulation, vals)
+            plt.tricontourf(triangulation, vals, 30)
             if with_colorbar: plt.colorbar()
         if node_labels:
             for i, (x, y) in enumerate(zip(nodes_x, nodes_y)):
@@ -285,7 +285,17 @@ def mesh_to_edge_neighbours(graph_nodes, mesh_edges, mesh_cells, connection_type
     return edge_neighbours
 
 
-def get_sdf_data_loader(n_objects, data_folder, batch_size, reversed_edge_already_included=False):
+def compute_edge_weight(nodes, edge, method):
+    if method == "length":
+        dist = distance_matrix(nodes, nodes)
+        idx = tuple(np.array(edge).T)
+        weights = dist[idx]
+    else:
+        raise(NotImplementedError("method %s is NOT supported for edge weight." %method))
+    return 1 / weights
+
+
+def get_sdf_data_loader(n_objects, data_folder, batch_size, reversed_edge_already_included=False, edge_weight=False):
     graph_data_list = []
     print("preparing sdf data loader")
     for i in range(n_objects):
@@ -300,9 +310,23 @@ def get_sdf_data_loader(n_objects, data_folder, batch_size, reversed_edge_alread
         if not reversed_edge_already_included:
             graph_edges = add_reversed_edges(graph_edges)
         graph_edges = graph_edges.T
+        n_edges = graph_edges.shape[1]
+        if edge_weight:
+            graph_edge_weights = np.load(data_folder + "graph_weights%d.npy" %i).astype(float)
+            if graph_edge_weights.shape[0] == n_edges:
+                pass
+            elif graph_edge_weights.shape[0] == n_edges // 2:
+                graph_edge_weights = np.concatenate([graph_edge_weights, graph_edge_weights])
+            else:
+                raise("edge weight size is wrong.")
+            #graph_edge_weights = graph_edge_weights.reshape(-1, 1)
+        else:
+            graph_edge_weights = np.ones(n_edges)
+
         graph_data = Data(x=torch.from_numpy(x).type(torch.float32),
                           y=torch.from_numpy(y).type(torch.float32),
                           edge_index=torch.from_numpy(graph_edges).type(torch.long),
+                          edge_attr=torch.from_numpy(graph_edge_weights).type(torch.float32),
                           face=torch.from_numpy(graph_cells).type(torch.long))
         graph_data_list.append(graph_data)
     train_data = DataLoader(graph_data_list, batch_size=batch_size)
