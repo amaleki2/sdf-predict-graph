@@ -3,10 +3,11 @@ from data2.data_utils import *
 
 
 class GraphData:
-    def __init__(self, graph_node, graph_edge, circle_radius=None, edge_length=None, edge_weight=None):
+    def __init__(self, graph_node, graph_edge, filter_params=None, edge_length=None, edge_weight=None, filter_type=None):
         self.graph_node = graph_node
         self.graph_edge = graph_edge
-        self.circle_radius = circle_radius
+        self.filter_params = filter_params
+        self.filter_type = filter_type
         self.edge_length = edge_length
         self.edge_weight = edge_weight
         self.check_sanity()
@@ -20,13 +21,16 @@ class GraphData:
             fid.write("graph nodes are mesh %s\n" %self.graph_node)
             fid.write("graph edges are mesh %s\n" %self.graph_edge)
             if self.edge_length:
-                fid.write("edge of length %d are considered as graph edge"%self.edge_length)
+                fid.write("edge of length %d are considered as graph edge\n"%self.edge_length)
 
-            if self.circle_radius:
-                fid.write("radius of neighbourhood is %0.3f" % self.circle_radius)
+            if self.filter_params:
+                if self.filter_type == "circular":
+                    fid.write("circular filter with radius of %0.3f\n" % self.filter_params[0])
+                elif self.filter_type == "rectangular":
+                    fid.write("rectangular filter with length and width %0.3f, %0.3f\n" % (self.filter_params[0], self.filter_params[1]))
 
             if self.edge_weight:
-                fid.write("edge weight is computed as %s" % self.edge_weight)
+                fid.write("edge weight is computed as %s\n" % self.edge_weight)
 
     def check_sanity(self):
         if self.graph_node == "vertex":
@@ -34,7 +38,7 @@ class GraphData:
                 "with `vertex` as graph node, graph edges can only be set to `edge` or `neighbour`"
             assert self.graph_edge != "edge" or self.edge_length, \
                 "if graph edge is `edge`, length of edge (`edge_length`) should be determined"
-            assert self.graph_edge != "neighbour" or self.circle_radius, \
+            assert self.graph_edge != "neighbour" or self.filter_params, \
                 "if graph edge is neighbour, circle of neighbourhood (`cirlce_radius`) should be determined"
         elif self.graph_node == "edge":
             assert self.graph_edge in ["vertex", "cell"], \
@@ -67,9 +71,9 @@ class GraphData:
         if self.graph_edge == "edge":
             graph_edges = cells_to_edges(graph_cells)
             if self.edge_length > 1:
-                graph_edges = expand_edge_connection(np.array(graph_edges).T, k=2)
+                graph_edges = expand_edge_connection(np.array(graph_edges).T, k=self.edge_length)
         elif self.graph_edge == "neighbour":
-            graph_edges = points_to_neighbours(graph_nodes[:, :2], self.circle_radius)
+            graph_edges = points_to_neighbours(graph_nodes[:, :2], self.filter_params, type=self.filter_type)
         else:
             raise(NotImplementedError())
 
@@ -110,7 +114,7 @@ class GraphData:
 
 
     # data_folder_2 = "mesh_files/vertex_neighbour_refined/"
-    # graph_data_2 = GraphData("vertex", "neighbour", circle_radius=0.1)
+    # graph_data_2 = GraphData("vertex", "neighbour", filter_params=0.1)
     # graph_data_2.generate_graph_data(n_objects, data_folder_2)
     #get_sdf_data_loader(n_objects, data_folder_2, batch_size, reversed_edge_already_included=False)
 

@@ -128,7 +128,7 @@ def vtk_to_mesh(vtk_file):
     return mesh
 
 
-def plot_mesh(mesh, dims=2, node_labels=False, vals=None, with_colorbar=False):
+def plot_mesh(mesh, dims=2, node_labels=False, vals=None, with_colorbar=False, levels=None, border=None):
     if not isinstance(mesh.points, np.ndarray):
         mesh.points = np.array(mesh.points)
     nodes_x = mesh.points[:, 0]
@@ -142,7 +142,16 @@ def plot_mesh(mesh, dims=2, node_labels=False, vals=None, with_colorbar=False):
             triangulation = tri.Triangulation(nodes_x, nodes_y, elements_tris)
             plt.tricontourf(triangulation, vals, 30)
             if with_colorbar: plt.colorbar()
-        if node_labels:
+            if levels:
+                cn = plt.tricontour(triangulation, vals, levels, colors='w')
+                plt.clabel(cn, fmt='%0.2f', colors='k', fontsize=10)
+        if border:
+            plt.hlines(1-border, -1+border, 1-border, 'r')
+            plt.hlines(-1+border, -1+border, 1-border, 'r')
+            plt.vlines(1-border, -1+border, 1-border, 'r')
+            plt.vlines(-1+border, -1+border, 1-border, 'r')
+
+    if node_labels:
             for i, (x, y) in enumerate(zip(nodes_x, nodes_y)):
                 plt.text(x, y, i)
 
@@ -255,10 +264,23 @@ def expand_edge_connection(edges, k=2):
     return new_edges.T
 
 
-def points_to_neighbours(points, radius):
-    dist = distance_matrix(points, points)
-    dist += 2 * radius * np.tril(np.ones_like(dist)) # to avoid duplication later
-    neighbours = np.array(np.where(dist < radius))
+def points_to_neighbours(points, params, type="circular"):
+    if type == "circular":
+        assert len(params) == 1
+        radius = params[0]
+        dist = distance_matrix(points, points)
+        dist += 2 * radius * np.tril(np.ones_like(dist))  # to avoid duplication later
+        neighbours = np.array(np.where(dist < radius))
+    elif type == "rectangular":
+        assert len(params) == 2
+        lx, ly = params
+        distx = distance_matrix(points[:, 0].reshape(-1, 1), points[:, 0].reshape(-1, 1))
+        disty = distance_matrix(points[:, 1].reshape(-1, 1), points[:, 1].reshape(-1, 1))
+        in_filter = np.logical_and(distx < lx, disty < ly)
+        in_filter[np.triu_indices(points.shape[0])] = False  # to avoid duplication later
+        neighbours = np.array(np.where(in_filter))
+    else:
+        raise(NotImplementedError("this type is not defined."))
     return neighbours.T
 
 

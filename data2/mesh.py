@@ -60,11 +60,15 @@ class MeshData:
 
         return geom, img, sdf
 
-    def generate_sdf_mesh(self, data_folder, name="", plot=False):
+    def generate_sdf_mesh(self, data_folder, name="", plot=False, save_sdf_pxl=False):
         if not os.path.isdir(data_folder):
             os.mkdir(data_folder)
 
         geom, img, sdf = self.generate_random_geometries()
+        if save_sdf_pxl:
+            sdf_pxl_file = data_folder + "sdf_pxl" + name + ".npy"
+            np.save(sdf_pxl_file, sdf)
+
         geo_file = data_folder + "geom" + name + ".geo"
         create_geo_file(img, lc1=self.mesh_coarse_size, lc2=self.mesh_fine_size,
                         skip=self.skip_points_every, geo_file=geo_file, refined=self.refined)

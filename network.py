@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_sparse import spspmm
-from torch_geometric.nn import GraphUNet, GCNConv
+from torch_geometric.nn import GraphUNet, GCNConv, DeepGCNLayer, GENConv
 from torch_geometric.utils import (dropout_adj, add_self_loops, sort_edge_index,
                                    remove_self_loops)
 
@@ -117,3 +117,37 @@ class UNet_cls(torch.nn.Module):
         return x
 
 
+class DeeperGCN(torch.nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_layers, edge_in_channels):
+        super(DeeperGCN, self).__init__()
+
+        self.node_encoder = nn.Linear(in_channels, hidden_channels)
+        self.edge_encoder = nn.Linear(edge_in_channels, hidden_channels)
+
+        self.layers = torch.nn.ModuleList()
+        for i in range(1, num_layers + 1):
+            conv = GENConv(hidden_channels, hidden_channels, aggr='softmax',
+                           t=1.0, learn_t=True, num_layers=2, norm='layer')
+            norm = nn.LayerNorm(hidden_channels, elementwise_affine=True)
+            act = nn.ReLU(inplace=True)
+
+            layer = DeepGCNLayer(conv, norm, act, block='res+', dropout=0.1,
+                                 ckpt_grad=i % 3)
+            self.layers.append(layer)
+
+        self.lin = nn.Linear(hidden_channels, out_channels)
+
+    def forward(self, dat):
+        x, edge_index, edge_attr = dat.x, dat.edge_index, dat.edge_attr.view(-1, 1)
+        x = self.node_encoder(x)
+        edge_attr = self.edge_encoder(edge_attr)
+
+        x = self.layers[0].conv(x, edge_index, edge_attr)
+
+        for layer in self.layers[1:]:
+            x = layer(x, edge_index, edge_attr)
+
+        x = self.layers[0].act(self.layers[0].norm(x))
+        #x = F.dropout(x, p=0.1, training=self.training)
+
+        return self.lin(x)
