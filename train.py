@@ -2,7 +2,6 @@ import meshio
 import numpy as np
 import matplotlib.pyplot as plt
 from data2 import plot_mesh
-from pytorch3d.loss import chamfer_distance
 
 import torch
 import torch.nn as nn

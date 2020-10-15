@@ -341,15 +341,27 @@ def compute_edge_weight(nodes, edge, method):
     return 1 / weights
 
 
-def get_sdf_data_loader(n_objects, data_folder, batch_size, reversed_edge_already_included=False, edge_weight=False):
+def get_sdf_data_loader(n_objects, data_folder, batch_size, mesh_folder=None,
+                        reversed_edge_already_included=False, edge_weight=False):
     graph_data_list = []
     print("preparing sdf data loader")
+    if mesh_folder:
+        print('reading pixel data for target')
+        pxl_size = 128
+        xc, yc = np.meshgrid(np.linspace(-1, 1, pxl_size), np.linspace(-1, 1, pxl_size))
+        xc, yc = xc.reshape(-1, 1), yc.reshape(-1, 1)
+
     for i in range(n_objects):
         graph_nodes = np.load(data_folder + "graph_nodes%d.npy" % i).astype(float)
         x = graph_nodes.copy()
         x[:, 2] = (x[:, 2] < 0).astype(float)
-        y = graph_nodes.copy()[:, 2]
-        y = y.reshape(-1, 1)
+        if mesh_folder:
+            y = np.load(mesh_folder + "sdf_pxl%d.npy"% i).reshape(-1, 1)
+            y = np.concatenate([xc, yc, y], axis=-1)
+        else:
+            y = graph_nodes.copy()[:, 2]
+            y = y.reshape(-1, 1)
+
         graph_cells = np.load(data_folder + "graph_cells%d.npy" % i).astype(int)
         graph_cells = graph_cells.T
         graph_edges = np.load(data_folder + "graph_edges%d.npy" % i).astype(int)
