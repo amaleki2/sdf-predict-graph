@@ -27,7 +27,6 @@ def eikonal_loss(pred, xy, device='cuda', retain_graph=True):
     return eikonal_loss
 
 
-
 def train_model(model, train_data, lr_0=0.001, n_epoch=101,
                 with_borderless_loss=True, with_eikonal_loss=False,
                 print_every=10, step_size=50, gamma=0.5, radius=0.1):
@@ -61,9 +60,10 @@ def train_model(model, train_data, lr_0=0.001, n_epoch=101,
         if epoch % print_every == 0:
             print("epoch=%d, loss=%0.5e, lr=%0.5e" % (epoch, running_loss / len(train_data),
                                                       optimizer.param_groups[0]['lr']))
-        if epoch % (5 * print_every) == 0:
+        if epoch % (10 * print_every) == 0:
             torch.save(model.state_dict(), "models/model" + ".pth")
             np.save("models/loss.npy", running_loss_list)
+            #plot_results(model, train_data, plot_every=5)
 
 
 def plot_results(model, data, plot_every=-1, levels=None, border=None):
@@ -86,6 +86,7 @@ def plot_results(model, data, plot_every=-1, levels=None, border=None):
                 continue
             d = d.to(device=device)
             pred = model(d)
+            pred += torch.sum(d.x[:, :2], dim=-1, keepdim=True)
             cells = d.face.numpy()
             points = d.x.numpy()
             points[:, 2] = 0.
