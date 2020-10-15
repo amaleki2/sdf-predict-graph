@@ -4,17 +4,22 @@ import matplotlib.pyplot as plt
 import meshio
 
 # Todo: I don't like this. fix it
-sys.path.insert(1, 'C:/Users/amaleki/OneDrive - ANSYS, Inc/Projects/sdf-prediction/')
+import os
+if os.name == 'posix':
+    sys.path.insert(1, '/home/ansysai/amaleki/sdf-prediction/')
+else:
+    sys.path.insert(1, 'C:/Users/amaleki/OneDrive - ANSYS, Inc/Projects/sdf-prediction/')
 from data.geoms import Rectangle, Circle, plot_sdf
 
 
 class MeshData:
-    def __init__(self, geometries, mesh_coarse_size, mesh_fine_size, refined, skip_every):
+    def __init__(self, geometries, mesh_coarse_size, mesh_fine_size, refined, skip_every, save_sdf_pxl=False):
         self.geometries = geometries
         self.mesh_coarse_size = mesh_coarse_size
         self.mesh_fine_size = mesh_fine_size
         self.refined = refined
         self.skip_points_every = skip_every
+        self.save_sdf_pxl = save_sdf_pxl
 
     def write_mesh_features_to_file(self, mesh_folder):
         if not os.path.isdir(mesh_folder):
@@ -29,9 +34,9 @@ class MeshData:
             fid.write("mesh coarse size: %0.3f\n"%self.mesh_coarse_size)
             fid.write("mesh fine size: %0.3f\n"%self.mesh_fine_size)
             if self.refined:
-                fid.write("mesh is refined at boundary with skip parameter: %d"%self.skip_points_every)
+                fid.write("mesh is refined at boundary with skip parameter: %d\n"%self.skip_points_every)
             else:
-                fid.write("mesh is NOT refined")
+                fid.write("mesh is NOT refined\n")
 
 
     def generate_random_geometries(self):
@@ -60,12 +65,12 @@ class MeshData:
 
         return geom, img, sdf
 
-    def generate_sdf_mesh(self, data_folder, name="", plot=False, save_sdf_pxl=False):
+    def generate_sdf_mesh(self, data_folder, name="", plot=False):
         if not os.path.isdir(data_folder):
             os.mkdir(data_folder)
 
         geom, img, sdf = self.generate_random_geometries()
-        if save_sdf_pxl:
+        if self.save_sdf_pxl:
             sdf_pxl_file = data_folder + "sdf_pxl" + name + ".npy"
             np.save(sdf_pxl_file, sdf)
 
@@ -96,5 +101,6 @@ class MeshData:
             plt.subplot(2, 2, 4)
             plot_mesh(sdf_mesh, vals=nodes_sdf, with_colorbar=True)
             plt.show()
+
 
 

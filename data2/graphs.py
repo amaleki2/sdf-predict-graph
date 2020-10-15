@@ -28,18 +28,22 @@ class GraphData:
                     fid.write("circular filter with radius of %0.3f\n" % self.filter_params[0])
                 elif self.filter_type == "rectangular":
                     fid.write("rectangular filter with length and width %0.3f, %0.3f\n" % (self.filter_params[0], self.filter_params[1]))
+                elif self.filter_type == "knn":
+                    fid.write("knn filter with k = %d, max radius of %0.3f\n" % (self.filter_params[0], self.filter_params[1]))
 
             if self.edge_weight:
                 fid.write("edge weight is computed as %s\n" % self.edge_weight)
 
     def check_sanity(self):
         if self.graph_node == "vertex":
-            assert self.graph_edge in ["edge", "neighbour"], \
-                "with `vertex` as graph node, graph edges can only be set to `edge` or `neighbour`"
+            assert self.graph_edge in ["edge", "neighbour", "knn"], \
+                "with `vertex` as graph node, graph edges can only be set to `edge`, `neighbour` or `knn`"
             assert self.graph_edge != "edge" or self.edge_length, \
                 "if graph edge is `edge`, length of edge (`edge_length`) should be determined"
             assert self.graph_edge != "neighbour" or self.filter_params, \
-                "if graph edge is neighbour, circle of neighbourhood (`cirlce_radius`) should be determined"
+                "if graph edge is neighbour, filter_params should be determined"
+            assert self.graph_edge != "knn" or self.filter_params, \
+                "if graph edge is knn, filter_params should be determined"
         elif self.graph_node == "edge":
             assert self.graph_edge in ["vertex", "cell"], \
                 "with `edge` as graph node, graph edges can only be set to `vertex` or `cell`"
@@ -51,13 +55,14 @@ class GraphData:
         assert self.edge_weight is None or self.edge_weight in ["length"], \
             "only `length` is supported for edge_weight"
 
-    def generate_graph_data(self, n_geoms, mesh_folder, graph_folder=None):
+    def generate_graph_data(self, n_geoms, mesh_folder, graph_folder=None, edges_trimmed=False):
         graph_folder = mesh_folder if graph_folder is None else graph_folder
         if not os.path.isdir(graph_folder):
             os.mkdir(graph_folder)
         if self.graph_node == "vertex":
             for i in tqdm(range(n_geoms)):
                 self.generate_graph_from_vertices(mesh_folder, graph_folder, name=str(i))
+
         elif self.graph_node == "edge":
             for i in tqdm(range(n_geoms)):
                 self.generate_graph_from_edges(mesh_folder, graph_folder, name=str(i))
@@ -74,6 +79,8 @@ class GraphData:
                 graph_edges = expand_edge_connection(np.array(graph_edges).T, k=self.edge_length)
         elif self.graph_edge == "neighbour":
             graph_edges = points_to_neighbours(graph_nodes[:, :2], self.filter_params, type=self.filter_type)
+        elif self.graph_edge == "knn":
+            graph_edges = points_to_knn(graph_nodes[:, :2], *self.filter_params)
         else:
             raise(NotImplementedError())
 
@@ -102,7 +109,32 @@ class GraphData:
         np.save(graph_folder + "graph_cells" + name + ".npy", graph_cells)
         np.save(graph_folder + "graph_edges" + name + ".npy", graph_edges)
 
+    def trim_neighbour(self, graph_folder, n_theta=8, name="", n_edge=1):
+        assert self.graph_node == "vertex"
+        theta_c = np.linspace(-np.pi - 1e-3, np.pi + 1e-3, n_theta+1)
+        graph_nodes = np.load(graph_folder + "graph_nodes" + name + ".npy")
+        graph_nodes = graph_nodes[:, :2]
+        graph_edges = np.load(graph_folder + "graph_edges" + name + ".npy")
+        graph_edges_trimmed = []
+        for i, node in enumerate(graph_nodes):
+            edges = [e[1] for e in graph_edges if e[0] == i]
+            edges += [e[0] for e in graph_edges if e[1] == i]
+            neighbours = graph_nodes[edges, :]
+            dist = neighbours - node
+            theta = np.arctan2(dist[:, 1], dist[:, 0])
+            for j in range(n_theta):
+                mask = np.logical_and(theta >= theta_c[j], theta < theta_c[j+1])
+                neighbours_i = neighbours[mask]
+                neighbours_i = sorted(neighbours_i, key=lambda x: (x[0] - node[0])**2 + (x[1] - node[1])**2)
+                for neighbour in neighbours_i[:n_edge]:
+                    i_edge = edges[np.where(neighbours == neighbour)[0][0]]
+                    graph_edges_trimmed.append([i, i_edge])
 
+        graph_edges_trimmed = np.array(graph_edges_trimmed)
+        np.save(graph_folder + "graph_edge_trimmed" + name + ".npy", graph_edges_trimmed)
+        if self.edge_weight is not None:
+            edge_weights = compute_edge_weight(graph_nodes[:, :2], graph_edges_trimmed, self.edge_weight)
+            np.save(graph_folder + "graph_weights_trimmed" + name + ".npy", edge_weights)
 
 #if __name__ == "__main__":
 

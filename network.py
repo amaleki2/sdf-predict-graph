@@ -36,7 +36,6 @@ class GCNet(torch.nn.Module):
     """
     blah
     """
-
     def __init__(self, in_channels, hidden_channels, out_channels, act=F.relu):
         super(GCNet, self).__init__()
         self.in_channels = in_channels
@@ -88,6 +87,26 @@ class GCNet(torch.nn.Module):
         return '{}({}, {}, {}, depth={}, pool_ratios={})'.format(
             self.__class__.__name__, self.in_channels, self.hidden_channels,
             self.out_channels, self.depth, self.pool_ratios)
+
+
+class GCNet2(GCNet):
+    def __init__(self, in_channels, hidden_channels, out_channels, hidden_lins):
+        super(GCNet2, self).__init__(in_channels, hidden_channels, out_channels)
+        self.lins = torch.nn.ModuleList()
+        self.lins.append(nn.Linear(out_channels, hidden_lins[0]))
+        for i in range(len(hidden_lins) - 1):
+            self.lins.append(nn.Linear(hidden_lins[i], hidden_lins[i+1]))
+
+        #self.flatten = torch.flatten
+
+    def forward(self, data):
+        x = super().forward(data)
+        x = x.view(1, -1)
+        for i in range(len(self.lins) - 1):
+            x = self.lins[i](x)
+            x = self.act(x)
+        x = self.lins[-1](x)
+        return x
 
 
 class UNet_cls(torch.nn.Module):

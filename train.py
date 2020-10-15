@@ -6,13 +6,8 @@ from data2 import plot_mesh
 import torch
 import torch.nn as nn
 
-
-def eikonal_loss(pred, xy, device='cuda'):
-    pred.backward(gradient=torch.ones(pred.size()).to(device), retain_graph=True)
-    dg = xy.grad[:, :2]
-    dg_mag = torch.sqrt(torch.sum(dg * dg, dim=-1))
-    eikonal_loss = nn.MSELoss()(dg_mag, torch.ones(dg_mag.size()))
-    return eikonal_loss
+l1_loss = nn.L1Loss()
+l2_loss = nn.MSELoss()
 
 
 def borderless_loss(pred, target, data, radius):
@@ -23,9 +18,18 @@ def borderless_loss(pred, target, data, radius):
     return loss_masked_reduced
 
 
+def eikonal_loss(pred, xy, device='cuda', retain_graph=True):
+    pred.backward(gradient=torch.ones(pred.size()).to(device), retain_graph=retain_graph)
+    dg = xy.grad[:, :2]
+    dg_mag = torch.sqrt(torch.sum(dg * dg, dim=-1))
+    eikonal_loss = l2_loss(dg_mag, torch.ones(dg_mag.size()).to(device))
+    eikonal_loss.requires_grad = True
+    return eikonal_loss
+
+
 
 def train_model(model, train_data, lr_0=0.001, n_epoch=101,
-                loss_func=nn.L1Loss(), with_eikonal_loss=False,
+                with_borderless_loss=True, with_eikonal_loss=False,
                 print_every=10, step_size=50, gamma=0.5, radius=0.1):
 
     print("training begins")
@@ -44,10 +48,11 @@ def train_model(model, train_data, lr_0=0.001, n_epoch=101,
             model.train()
             optimizer.zero_grad()
             pred = model(d)
+            pred += torch.sum(d.x[:, :2], dim=-1, keepdim=True)
             target = d.y
-            #loss = loss_func(pred, target)
-            loss = borderless_loss(pred, target, d, radius)
+            loss = borderless_loss(pred, target, d, radius) if with_borderless_loss else l1_loss(pred, target)
             loss += eikonal_loss(pred, d.x) if with_eikonal_loss else 0
+            # loss = eikonal_loss(pred, d.x, retain_graph=True)
             loss.backward()
             optimizer.step()
             running_loss += loss.item()

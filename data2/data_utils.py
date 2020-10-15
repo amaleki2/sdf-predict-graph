@@ -8,7 +8,8 @@ import networkx as nx
 import matplotlib.tri as tri
 import matplotlib.pyplot as plt
 from scipy.sparse import coo_matrix
-from scipy.spatial import distance_matrix
+from scipy.spatial import distance_matrix, KDTree
+from itertools import product
 
 
 def compute_edges_img(img):
@@ -259,9 +260,32 @@ def expand_edge_connection(edges, k=2):
     # set diagonal and lower diagonal values to 0, avoid counting edges twice.
     np.fill_diagonal(new_adj_matrix, 0)
     new_adj_matrix *= np.tri(*new_adj_matrix.shape)
-
     new_edges = np.array(np.where(new_adj_matrix > 0))
     return new_edges.T
+
+
+def numpy_array_intersect(a, b):
+    # trick is to treat the rows as a single value
+    # assert np.ndim(a) == np.ndim(b) == 2
+    # nrows, ncols = a.shape
+    # dtype = {'names': ['f{}'.format(i) for i in range(ncols)], 'formats': ncols * [a.dtype]}
+    # c = np.intersect1d(a.view(dtype), b.view(dtype))
+    # c = c.view(a.dtype).reshape(-1, ncols)
+    # return c
+    aset = set([tuple(x) for x in a])
+    bset = set([tuple(x) for x in b])
+    return np.array([x for x in aset & bset])
+
+def points_to_knn(points, k, max_radius):
+    tree = KDTree(points)
+    indices = tree.query(points, k+1)[1]
+    edge_pairs = []
+    for idx in indices:
+        edge_pairs += [[idx[0], x] for x in idx[idx > idx[0]]]# list(product(left_node, right_node))
+    edge_pairs = np.array(edge_pairs)
+    neighbours = points_to_neighbours(points, [max_radius], type="circular").astype(int)
+    knn_neighbours = numpy_array_intersect(edge_pairs, neighbours)
+    return knn_neighbours
 
 
 def points_to_neighbours(points, params, type="circular"):

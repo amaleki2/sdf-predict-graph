@@ -112,12 +112,12 @@ assert {7, 8} in edges_set
 assert {7, 10} in edges_set
 assert {8, 11} in edges_set
 
-graph_data_test = GraphData("vertex", "neighbour", circle_radius=0.5)
+graph_data_test = GraphData("vertex", "neighbour", filter_params=[0.5], filter_type="circular")
 graph_data_test.generate_graph_data(1, data_folder_test)
 edges = np.load(data_folder_test + "graph_edges0.npy")
 assert edges.shape == (0, 2)
 
-graph_data_test = GraphData("vertex", "neighbour", circle_radius=1.5)
+graph_data_test = GraphData("vertex", "neighbour", filter_params=[1.5], filter_type="circular")
 graph_data_test.generate_graph_data(1, data_folder_test)
 edges = np.load(data_folder_test + "graph_edges0.npy")
 
@@ -162,6 +162,47 @@ assert {6, 7} in edges_set
 assert {6, 9} in edges_set
 assert {7, 10} in edges_set
 assert {8, 11} in edges_set
+
+
+graph_data_test = GraphData("vertex", "knn", filter_params=[5, 1.5], filter_type="circular")
+graph_data_test.generate_graph_data(1, data_folder_test)
+edges = np.load(data_folder_test + "graph_edges0.npy")
+
+edges_set = [set(x) for x in edges]
+assert len(edges_set) == 33
+assert {0, 4} in edges_set
+assert {0, 7} in edges_set
+assert {0, 9} in edges_set
+assert {1, 4} in edges_set
+assert {1, 5} in edges_set
+assert {1, 8} in edges_set
+assert {1, 9} in edges_set
+assert {1, 10} in edges_set
+assert {2, 5} in edges_set
+assert {2, 6} in edges_set
+assert {2, 10} in edges_set
+assert {3, 6} in edges_set
+assert {3, 7} in edges_set
+assert {3, 9} in edges_set
+assert {3, 10} in edges_set
+assert {3, 11} in edges_set
+assert {4, 8} in edges_set
+assert {4, 9} in edges_set
+assert {4, 10} in edges_set
+assert {5, 8} in edges_set
+assert {5, 9} in edges_set
+assert {5, 10} in edges_set
+assert {6, 9} in edges_set
+assert {6, 10} in edges_set
+assert {6, 11} in edges_set
+assert {7, 9} in edges_set
+assert {7, 10} in edges_set
+assert {7, 11} in edges_set
+assert {8, 9} in edges_set
+assert {8, 10} in edges_set
+assert {9, 10} in edges_set
+assert {9, 11} in edges_set
+assert {10, 11} in edges_set
 
 
 graph_data_test = GraphData("edge", "cell", edge_length=1)
