@@ -48,7 +48,6 @@ def train_model(model, train_data, lr_0=0.001, n_epoch=101, loss_func=l1_loss,
             model.train()
             optimizer.zero_grad()
             pred = model(d)
-            pred += torch.sum(d.x[:, :2], dim=-1, keepdim=True)
             target = d.y
             if with_borderless_loss:
                 loss = borderless_loss(pred, target, loss_func, d, radius)
