@@ -2,17 +2,18 @@ import meshio
 import numpy as np
 import matplotlib.pyplot as plt
 from data2 import plot_mesh
+from pytorch3d.loss import chamfer_distance
 
 import torch
 import torch.nn as nn
 
-l1_loss = nn.L1Loss()
-l2_loss = nn.MSELoss()
+l1_loss = nn.L1Loss
+l2_loss = nn.MSELoss
 
 
-def borderless_loss(pred, target, data, radius):
+def borderless_loss(pred, target, loss_func, data, radius):
     mask = torch.logical_and(torch.abs(data.x[:, 0]) < 1 - radius, torch.abs(data.x[:, 1]) < 1 - radius)
-    loss = nn.L1Loss(reduction='none')(pred, target)
+    loss = loss_func(reduction='none')(pred, target)
     loss_masked = loss[mask]
     loss_masked_reduced = torch.mean(loss_masked)
     return loss_masked_reduced
@@ -27,7 +28,7 @@ def eikonal_loss(pred, xy, device='cuda', retain_graph=True):
     return eikonal_loss
 
 
-def train_model(model, train_data, lr_0=0.001, n_epoch=101,
+def train_model(model, train_data, lr_0=0.001, n_epoch=101, loss_func=l1_loss,
                 with_borderless_loss=True, with_eikonal_loss=False,
                 print_every=10, step_size=50, gamma=0.5, radius=0.1):
 
@@ -49,9 +50,12 @@ def train_model(model, train_data, lr_0=0.001, n_epoch=101,
             pred = model(d)
             pred += torch.sum(d.x[:, :2], dim=-1, keepdim=True)
             target = d.y
-            loss = borderless_loss(pred, target, d, radius) if with_borderless_loss else l1_loss(pred, target)
+            if with_borderless_loss:
+                loss = borderless_loss(pred, target, loss_func, d, radius)
+            else:
+                loss = l1_loss()(pred, target)
+
             loss += eikonal_loss(pred, d.x) if with_eikonal_loss else 0
-            # loss = eikonal_loss(pred, d.x, retain_graph=True)
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
