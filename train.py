@@ -34,7 +34,7 @@ def train_model(model, train_data, lr_0=0.001, n_epoch=101, loss_func=l1_loss,
     print("training begins")
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr_0, weight_decay=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr_0)#, weight_decay=0.001)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
     running_loss_list = []
     for epoch in range(1, n_epoch):
@@ -50,8 +50,10 @@ def train_model(model, train_data, lr_0=0.001, n_epoch=101, loss_func=l1_loss,
             target = d.y
             if with_borderless_loss:
                 loss = borderless_loss(pred, target, loss_func, d, radius)
+                # z = torch.sum(z, dim=-1, keepdim=True)
+                # loss += borderless_loss(z, target, loss_func, d, radius)
             else:
-                loss = l1_loss()(pred, target)
+                loss = loss_func()(pred, target)
 
             loss += eikonal_loss(pred, d.x) if with_eikonal_loss else 0
             loss.backward()
@@ -88,7 +90,6 @@ def plot_results(model, data, plot_every=-1, levels=None, border=None):
                 continue
             d = d.to(device=device)
             pred = model(d)
-            pred += torch.sum(d.x[:, :2], dim=-1, keepdim=True)
             cells = d.face.numpy()
             points = d.x.numpy()
             points[:, 2] = 0.

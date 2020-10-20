@@ -396,6 +396,67 @@ def add_reversed_edges(edges):
     edges = np.concatenate([edges, edges_reversed], axis=0)
     return edges
 
+
+def pixel_to_neighbour(n_pxl=128):
+    l1 = np.unravel_index(np.arange(n_pxl**2), (n_pxl, n_pxl))
+    neighbours = []
+    for i, (irow, icol) in enumerate(l1):
+        l2 = []
+        if irow > 0:
+            l2.append([irow-1, icol])
+            if icol > 0:
+                l2.append([irow-1, icol-1])
+            if icol < n_pxl - 1:
+                l2.append([irow-1, icol+1])
+        if irow < n_pxl - 1:
+            l2.append([irow+1, icol])
+            if icol > 0:
+                l2.append([irow+1, icol-1])
+            if icol < n_pxl - 1:
+                l2.append([irow+1, icol+1])
+        if icol > 0:
+            l2.append([irow, icol-1])
+        if icol < n_pxl - 1:
+            l2.append([irow, icol+1])
+        l2_r = np.ravel_multi_index(l2, (n_pxl, n_pxl))
+        neighbour = np.array(np.repeat([i], l2_r.shape[0]))
+        neighbour = np.concatenate([neighbour, l2_r], axis=-1)
+        neighbours.append(neighbour)
+    return neighbours
+
+
+def get_sdf_data_loader_from_sdf_pixels(n_objects, mesh_folder, batch_size, filter_params=None,
+                                        reversed_edge_already_included=False):
+    print("preparing sdf data loader")
+    sdf_pxl = np.load(mesh_folder + "sdf_pxl0.npy").astype(float)
+    pxl_size = 128
+    assert sdf_pxl.shape[0] == sdf_pxl.shape[1] == pxl_size
+    if filter_params is None:
+        filter_params = [2 * np.sqrt(2) / pxl_size + 5e-4]
+    xc, yc = np.meshgrid(np.linspace(-1, 1, pxl_size), np.linspace(-1, 1, pxl_size))
+    xc, yc = xc.reshape(-1, 1), yc.reshape(-1, 1)
+    graph_edges = points_to_neighbours(np.concatenate([xc, yc], axis=-1), filter_params)
+    if not reversed_edge_already_included:
+        graph_edges = add_reversed_edges(graph_edges)
+    graph_edges = graph_edges.T
+    n_edges = graph_edges.shape[1]
+    graph_edge_weights = np.ones(n_edges)
+    graph_data_list = []
+    for i in range(n_objects):
+        sdf_pxl = np.load(mesh_folder + "sdf_pxl%d.npy" % i).astype(float)
+        sdf_pxl = sdf_pxl.reshape(-1, 1)
+        img_pxl = (sdf_pxl < 0).astype(float)
+        x = np.concatenate([xc, yc, img_pxl], axis=-1)
+        y = sdf_pxl
+        graph_data = Data(x=torch.from_numpy(x).type(torch.float32),
+                          y=torch.from_numpy(y).type(torch.float32),
+                          edge_index=torch.from_numpy(graph_edges).type(torch.long),
+                          edge_attr=torch.from_numpy(graph_edge_weights).type(torch.float32))
+        graph_data_list.append(graph_data)
+    train_data = DataLoader(graph_data_list, batch_size=batch_size)
+    return train_data
+
+
 # def graph_to_pgdata(xgraph, ygraph, x_keys=("x", "y", "z"), y_keys=("val",)):
 #     x = [graph_to_features(xgraph, key) for key in x_keys]
 #     x = np.array(x).T

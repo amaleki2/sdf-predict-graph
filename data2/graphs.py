@@ -55,7 +55,7 @@ class GraphData:
         assert self.edge_weight is None or self.edge_weight in ["length"], \
             "only `length` is supported for edge_weight"
 
-    def generate_graph_data(self, n_geoms, mesh_folder, graph_folder=None, edges_trimmed=False):
+    def generate_graph_data(self, n_geoms, mesh_folder, graph_folder=None):
         graph_folder = mesh_folder if graph_folder is None else graph_folder
         if not os.path.isdir(graph_folder):
             os.mkdir(graph_folder)
