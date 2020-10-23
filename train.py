@@ -1,7 +1,7 @@
 import meshio
 import numpy as np
 import matplotlib.pyplot as plt
-from data2 import plot_mesh
+from data2 import plot_mesh, plot_mesh_onto_line
 
 import torch
 import torch.nn as nn
@@ -22,19 +22,19 @@ def eikonal_loss(pred, xy, device='cuda', retain_graph=True):
     pred.backward(gradient=torch.ones(pred.size()).to(device), retain_graph=retain_graph)
     dg = xy.grad[:, :2]
     dg_mag = torch.sqrt(torch.sum(dg * dg, dim=-1))
-    eikonal_loss = l2_loss(dg_mag, torch.ones(dg_mag.size()).to(device))
+    eikonal_loss = l2_loss()(dg_mag, torch.ones(dg_mag.size()).to(device))
     eikonal_loss.requires_grad = True
     return eikonal_loss
 
 
 def train_model(model, train_data, lr_0=0.001, n_epoch=101, loss_func=l1_loss,
                 with_borderless_loss=True, with_eikonal_loss=False,
-                print_every=10, step_size=50, gamma=0.5, radius=0.1):
+                print_every=10, step_size=50, gamma=0.5, radius=0.1, save_name=""):
 
     print("training begins")
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr_0)#, weight_decay=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr_0, weight_decay=0.001)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
     running_loss_list = []
     for epoch in range(1, n_epoch):
@@ -48,12 +48,17 @@ def train_model(model, train_data, lr_0=0.001, n_epoch=101, loss_func=l1_loss,
             optimizer.zero_grad()
             pred = model(d)
             target = d.y
+            if model.with_middle_output:
+                pred, z = pred
+                z = torch.sum(z, dim=-1, keepdim=True)
             if with_borderless_loss:
                 loss = borderless_loss(pred, target, loss_func, d, radius)
-                # z = torch.sum(z, dim=-1, keepdim=True)
-                # loss += borderless_loss(z, target, loss_func, d, radius)
+                if model.with_middle_output:
+                    loss += borderless_loss(z, target, loss_func, d, radius)
             else:
                 loss = loss_func()(pred, target)
+                if model.with_middle_output:
+                    loss += loss_func()(z, target)
 
             loss += eikonal_loss(pred, d.x) if with_eikonal_loss else 0
             loss.backward()
@@ -64,45 +69,86 @@ def train_model(model, train_data, lr_0=0.001, n_epoch=101, loss_func=l1_loss,
         if epoch % print_every == 0:
             print("epoch=%d, loss=%0.5e, lr=%0.5e" % (epoch, running_loss / len(train_data),
                                                       optimizer.param_groups[0]['lr']))
-        if epoch % (10 * print_every) == 0:
-            torch.save(model.state_dict(), "models/model" + ".pth")
-            np.save("models/loss.npy", running_loss_list)
-            #plot_results(model, train_data, plot_every=5)
+        if epoch % (10 * print_every) == 0 or epoch == n_epoch - 1:
+            torch.save(model.state_dict(), "models/model" + save_name + ".pth")
+            np.save("models/loss" + save_name + ".npy", running_loss_list)
 
 
-def plot_results(model, data, plot_every=-1, levels=None, border=None):
-    if plot_every == -1:
-        p = 1
-    else:
-        p = plot_every / len(data)
-
-    loss_history = np.load("models/loss.npy")
+def plot_results(model, data, ndata=5, levels=None, border=None, save_name=""):
+    loss_history = np.load("models/loss" + save_name + ".npy")
     plt.plot(loss_history)
     plt.yscale('log')
 
     device = 'cpu'
     model = model.to(device)
-    model.load_state_dict(torch.load("models/model" + ".pth", map_location=device))
+    model.load_state_dict(torch.load("models/model" + save_name + ".pth", map_location=device))
     model.eval()
     with torch.no_grad():
         for i, d in enumerate(data):
-            if np.random.random() > p:
-                continue
+            if i > ndata:
+                break
             d = d.to(device=device)
             pred = model(d)
+            if model.with_middle_output:
+                pred, _ = pred
             cells = d.face.numpy()
             points = d.x.numpy()
             points[:, 2] = 0.
             mesh = meshio.Mesh(points=points, cells=[("triangle", cells.T)])
+
             plt.figure(figsize=(12, 5))
             plt.subplot(1, 2, 1)
-            plot_mesh(mesh, vals=pred.numpy()[:, 0], with_colorbar=True, levels=levels, border=border)
+            plot_mesh(mesh, vals=pred.numpy()[:, 0], with_colorbar=False, levels=levels, border=border)
             plt.gca().set_xticks([])
             plt.gca().set_yticks([])
             plt.subplot(1, 2, 2)
-            plot_mesh(mesh, vals=d.y.numpy()[:, 0], with_colorbar=True, levels=levels, border=border)
+            p = plot_mesh(mesh, vals=d.y.numpy()[:, 0], with_colorbar=False, levels=levels, border=border)
             plt.gca().set_xticks([])
             plt.gca().set_yticks([])
+            plt.gcf().subplots_adjust(right=0.8)
+            cbar_ax = plt.gcf().add_axes([0.85, 0.15, 0.05, 0.7])
+            plt.gcf().colorbar(p, cax=cbar_ax)
+            plt.show()
+
+
+def plot_results_over_line(model, data, ndata=5, save_name=""):
+    device = 'cpu'
+    model = model.to(device)
+    model.load_state_dict(torch.load("models/model" + save_name + ".pth", map_location=device))
+    model.eval()
+    with torch.no_grad():
+        for i, d in enumerate(data):
+            if i > ndata:
+                break
+            d = d.to(device=device)
+            pred = model(d)
+            if model.with_middle_output:
+                pred = pred[0].numpy()[:, 0]
+            else:
+                pred = pred.numpy()[:, 0]
+            gt = d.y.numpy()[:, 0]
+
+            cells = d.face.numpy()
+            points = d.x.numpy()
+            points[:, 2] = 0.
+            mesh = meshio.Mesh(points=points, cells=[("triangle", cells.T)])
+
+            plt.figure(figsize=(12, 5))
+            plt.subplot(2, 1, 1)
+            plot_mesh_onto_line(mesh, val=pred, x=-0.5)
+            plot_mesh_onto_line(mesh, val=pred, x=0.0)
+            plot_mesh_onto_line(mesh, val=pred, x=0.5)
+            plot_mesh_onto_line(mesh, val=gt, x=-0.5, linestyle="--")
+            plot_mesh_onto_line(mesh, val=gt, x=0.0, linestyle="--")
+            plot_mesh_onto_line(mesh, val=gt, x=0.5, linestyle="--")
+
+            plt.subplot(2, 1, 2)
+            plot_mesh_onto_line(mesh, val=pred, y=-0.5)
+            plot_mesh_onto_line(mesh, val=pred, y=0.0)
+            plot_mesh_onto_line(mesh, val=pred, y=0.5)
+            plot_mesh_onto_line(mesh, val=gt, y=-0.5, linestyle="--")
+            plot_mesh_onto_line(mesh, val=gt, y=0.0, linestyle="--")
+            plot_mesh_onto_line(mesh, val=gt, y=0.5, linestyle="--")
             plt.show()
 
 
@@ -122,5 +168,5 @@ if __name__ == "__main__":
     data_folder = "data2/dataset_1/graph1/"
     train_data = get_sdf_data_loader(n_objects, data_folder, batch_size, edge_weight=edge_weight)
     model = GCNet(in_channels, hidden_channels, out_channels)
-    train_model(model, train_data, lr_0=lr_0, n_epoch=n_epoch, loss_func=loss_func, step_size=step_size, gamma=gamma)
-    plot_results(model, train_data, plot_every=5)
+    #train_model(model, train_data, lr_0=lr_0, n_epoch=n_epoch, loss_func=loss_func, step_size=step_size, gamma=gamma)
+    plot_results_over_line(model, train_data, ndata=5, save_name="")

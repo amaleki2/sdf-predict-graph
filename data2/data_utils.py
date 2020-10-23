@@ -141,7 +141,7 @@ def plot_mesh(mesh, dims=2, node_labels=False, vals=None, with_colorbar=False, l
             plt.triplot(nodes_x, nodes_y, elements_tris, alpha=0.9, color='r')
         else:
             triangulation = tri.Triangulation(nodes_x, nodes_y, elements_tris)
-            plt.tricontourf(triangulation, vals, 30)
+            p = plt.tricontourf(triangulation, vals, 30)
             if with_colorbar: plt.colorbar()
             if levels:
                 cn = plt.tricontour(triangulation, vals, levels, colors='w')
@@ -156,6 +156,31 @@ def plot_mesh(mesh, dims=2, node_labels=False, vals=None, with_colorbar=False, l
             for i, (x, y) in enumerate(zip(nodes_x, nodes_y)):
                 plt.text(x, y, i)
 
+    if vals is not None:
+        return p
+
+
+def plot_mesh_onto_line(mesh, val, x=None, y=None, show=False, linestyle="-"):
+    if not isinstance(mesh.points, np.ndarray):
+        mesh.points = np.array(mesh.points)
+    assert (x is None) ^ (y is None), "one of x or y has to be None"
+    if x is None:
+        x = np.linspace(-1, 1, 50)
+        y = np.ones_like(x) * y
+        plotting_axes = x
+    else:  # y is None:
+        y = np.linspace(-1, 1, 50)
+        x = np.ones_like(y) * x
+        plotting_axes = y
+
+    nodes_x = mesh.points[:, 0]
+    nodes_y = mesh.points[:, 1]
+    elements_tris = [c for c in mesh.cells if c.type == "triangle"][0].data
+    triangulation = tri.Triangulation(nodes_x, nodes_y, elements_tris)
+    interpolator = tri.LinearTriInterpolator(triangulation, val)
+    val_over_line = interpolator(x, y)
+    plt.plot(plotting_axes, val_over_line, linestyle=linestyle)
+    if show: plt.show()
 
 def cells_to_edges(cells):
     edge_pairs = []

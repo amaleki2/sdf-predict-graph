@@ -8,19 +8,20 @@ from torch_geometric.utils import (dropout_adj, add_self_loops, sort_edge_index,
 
 
 class UNet(nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels):
+    def __init__(self, in_channels, hidden_channels, out_channels, with_middle_output=False):
         super().__init__()
         self.act = F.relu
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.with_middle_output = with_middle_output
         self.convs = torch.nn.ModuleList()
         self.n_channels = len(hidden_channels)
         self.convs.append(GCNConv(in_channels, hidden_channels[0], improved=True))
-        for i in range(self.n_channels  - 1):
+        for i in range(self.n_channels - 1):
             self.convs.append(GCNConv(hidden_channels[i], hidden_channels[i + 1], improved=True))
-        for i in range(1, self.n_channels ):
-            self.convs.append(GCNConv(hidden_channels[self.n_channels  - i] + hidden_channels[self.n_channels  - i - 1],
-                                      hidden_channels[self.n_channels  - i - 1], improved=True))
+        for i in range(1, self.n_channels):
+            self.convs.append(GCNConv(hidden_channels[self.n_channels - i] + hidden_channels[self.n_channels - i - 1],
+                                      hidden_channels[self.n_channels - i - 1], improved=True))
         self.convs.append(GCNConv(hidden_channels[0], out_channels, improved=True))
 
         self.reset_parameters()
@@ -48,7 +49,66 @@ class UNet(nn.Module):
             x = self.act(x)
 
         x = self.convs[-1](x, edge_index, edge_weight)
-        return x, z
+        if self.with_middle_output:
+            return x, z
+        else:
+            return x
+
+
+class UNet2(nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels, with_middle_output=False):
+        super().__init__()
+        self.act = F.relu
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.with_middle_output = with_middle_output
+        self.convs = torch.nn.ModuleList()
+        self.n_channels = len(hidden_channels)
+        self.convs.append(GCNConv(in_channels, hidden_channels[0], improved=True))
+        for i in range(self.n_channels - 1):
+            self.convs.append(GCNConv(hidden_channels[i], hidden_channels[i], improved=True))
+            self.convs.append(GCNConv(hidden_channels[i], hidden_channels[i + 1], improved=True))
+
+        for i in range(self.n_channels, 1, -1):
+            self.convs.append(GCNConv(hidden_channels[i - 1],  hidden_channels[i - 1], improved=True))
+            self.convs.append(GCNConv(hidden_channels[i - 1] + hidden_channels[i - 2], hidden_channels[i - 2], improved=True))
+
+        self.convs.append(GCNConv(hidden_channels[0], hidden_channels[0], improved=True))
+        self.convs.append(GCNConv(hidden_channels[0], out_channels, improved=True))
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        for conv in self.convs:
+            conv.reset_parameters()
+
+    def forward(self, data):
+        """"""
+        xvec = []
+        x = data.x
+        edge_index = data.edge_index
+        edge_weight = data.edge_attr
+
+        for i in range(self.n_channels):
+            x = self.convs[2 * i](x, edge_index, edge_weight)
+            x = self.act(x)
+            x = self.convs[2 * i + 1](x, edge_index, edge_weight)
+            x = self.act(x)
+            xvec.append(x)
+        z = xvec.pop()
+        for i in range(self.n_channels, 2 * self.n_channels - 1):
+            y = xvec.pop()
+            x = torch.cat([x, y], dim=-1)
+            x = self.convs[2 * i](x, edge_index, edge_weight)
+            x = self.act(x)
+            x = self.convs[2 * i + 1](x, edge_index, edge_weight)
+            x = self.act(x)
+
+        x = self.convs[-1](x, edge_index, edge_weight)
+        if self.with_middle_output:
+            return x, z
+        else:
+            return x
 
 
 class UNet_reg(torch.nn.Module):
