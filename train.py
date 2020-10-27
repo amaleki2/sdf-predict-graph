@@ -1,3 +1,5 @@
+import os
+import sys
 import meshio
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,7 +13,9 @@ l2_loss = nn.MSELoss
 
 
 def borderless_loss(pred, target, loss_func, data, radius):
-    mask = torch.logical_and(torch.abs(data.x[:, 0]) < 1 - radius, torch.abs(data.x[:, 1]) < 1 - radius)
+    mask = torch.logical_and(torch.abs(data.x[:, 0]) < 1 - radius,
+                             torch.abs(data.x[:, 1]) < 1 - radius)
+    #mask = torch.logical_and(mask, data.y > 0.4)
     loss = loss_func(reduction='none')(pred, target)
     loss_masked = loss[mask]
     loss_masked_reduced = torch.mean(loss_masked)
@@ -27,16 +31,29 @@ def eikonal_loss(pred, xy, device='cuda', retain_graph=True):
     return eikonal_loss
 
 
+def find_best_gpu():
+    # this function finds the GPU with most free memory.
+    if 'linux' in sys.platform and torch.cuda.device_count() > 1:
+        os.system('nvidia-smi -q -d Memory |grep -A4 GPU|grep Free >tmp')
+        memory_available = [int(x.split()[2]) for x in open('tmp', 'r').readlines()]
+        gpu_id = np.argmax(memory_available).item()
+        print("best gpu is %d with %0.1f Gb available space" %(gpu_id, memory_available[gpu_id]/1000))
+        return gpu_id
+
+
 def train_model(model, train_data, lr_0=0.001, n_epoch=101, loss_func=l1_loss,
                 with_borderless_loss=True, with_eikonal_loss=False,
                 print_every=10, step_size=50, gamma=0.5, radius=0.1, save_name=""):
-
     print("training begins")
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = torch.device('cuda')
+    gpu_id = find_best_gpu()
+    if gpu_id:
+        torch.cuda.set_device(gpu_id)
     model = model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr_0, weight_decay=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr_0)  # , weight_decay=0.001)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
     running_loss_list = []
+
     for epoch in range(1, n_epoch):
         running_loss = 0
         for d in train_data:
@@ -48,17 +65,10 @@ def train_model(model, train_data, lr_0=0.001, n_epoch=101, loss_func=l1_loss,
             optimizer.zero_grad()
             pred = model(d)
             target = d.y
-            if model.with_middle_output:
-                pred, z = pred
-                z = torch.sum(z, dim=-1, keepdim=True)
             if with_borderless_loss:
                 loss = borderless_loss(pred, target, loss_func, d, radius)
-                if model.with_middle_output:
-                    loss += borderless_loss(z, target, loss_func, d, radius)
             else:
                 loss = loss_func()(pred, target)
-                if model.with_middle_output:
-                    loss += loss_func()(z, target)
 
             loss += eikonal_loss(pred, d.x) if with_eikonal_loss else 0
             loss.backward()
@@ -89,8 +99,6 @@ def plot_results(model, data, ndata=5, levels=None, border=None, save_name=""):
                 break
             d = d.to(device=device)
             pred = model(d)
-            if model.with_middle_output:
-                pred, _ = pred
             cells = d.face.numpy()
             points = d.x.numpy()
             points[:, 2] = 0.
@@ -122,10 +130,7 @@ def plot_results_over_line(model, data, ndata=5, save_name=""):
                 break
             d = d.to(device=device)
             pred = model(d)
-            if model.with_middle_output:
-                pred = pred[0].numpy()[:, 0]
-            else:
-                pred = pred.numpy()[:, 0]
+            pred = pred.numpy()[:, 0]
             gt = d.y.numpy()[:, 0]
 
             cells = d.face.numpy()
