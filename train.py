@@ -79,7 +79,6 @@ def train_model(model, train_data, lr_0=0.001, n_epoch=101, loss_func=l1_loss,
         if epoch % print_every == 0:
             print("epoch=%d, loss=%0.5e, lr=%0.5e" % (epoch, running_loss / len(train_data),
                                                       optimizer.param_groups[0]['lr']))
-        if epoch % (10 * print_every) == 0 or epoch == n_epoch - 1:
             torch.save(model.state_dict(), "models/model" + save_name + ".pth")
             np.save("models/loss" + save_name + ".npy", running_loss_list)
 
@@ -119,6 +118,35 @@ def plot_results(model, data, ndata=5, levels=None, border=None, save_name=""):
             plt.show()
 
 
+def plot_results_pxl(model, data, ndata=5, save_name=""):
+    loss_history = np.load("models/loss" + save_name + ".npy")
+    plt.plot(loss_history)
+    plt.yscale('log')
+
+    device = 'cpu'
+    model = model.to(device)
+    model.load_state_dict(torch.load("models/model" + save_name + ".pth", map_location=device))
+    model.eval()
+    with torch.no_grad():
+        for i, d in enumerate(train_data):
+            d = d.to(device=device)
+            pred = model(d)
+            points = d.x.numpy()
+            points[:, 2] = 0.
+            plt.figure(figsize=(12, 5))
+            plt.subplot(1, 2, 1)
+            plt.contourf(pred.reshape(128, 128))
+            plt.gca().set_xticks([])
+            plt.gca().set_yticks([])
+            plt.subplot(1, 2, 2)
+            plt.contourf(d.y.numpy().reshape(128, 128))
+            plt.gca().set_xticks([])
+            plt.gca().set_yticks([])
+            plt.show()
+            if i > ndata:
+                break
+
+
 def plot_results_over_line(model, data, ndata=5, save_name=""):
     device = 'cpu'
     model = model.to(device)
@@ -155,23 +183,3 @@ def plot_results_over_line(model, data, ndata=5, save_name=""):
             plot_mesh_onto_line(mesh, val=gt, y=0.0, linestyle="--")
             plot_mesh_onto_line(mesh, val=gt, y=0.5, linestyle="--")
             plt.show()
-
-
-if __name__ == "__main__":
-    from data2 import get_sdf_data_loader
-    from network import GCNet
-
-    n_objects, batch_size, n_epoch = 100, 1, 100
-    in_channels, out_channels = 3, 1
-    hidden_channels = [16, 64, 128, 64, 16]
-    edge_weight = True
-    step_size, gamma = 60, 0.5
-    lr_0 = 0.001
-
-    loss_func = nn.L1Loss()
-
-    data_folder = "data2/dataset_1/graph1/"
-    train_data = get_sdf_data_loader(n_objects, data_folder, batch_size, edge_weight=edge_weight)
-    model = GCNet(in_channels, hidden_channels, out_channels)
-    #train_model(model, train_data, lr_0=lr_0, n_epoch=n_epoch, loss_func=loss_func, step_size=step_size, gamma=gamma)
-    plot_results_over_line(model, train_data, ndata=5, save_name="")

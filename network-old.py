@@ -229,3 +229,115 @@ class DeeperGCN(torch.nn.Module):
         #x = F.dropout(x, p=0.1, training=self.training)
 
         return self.lin(x)
+
+
+class UNet3(nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels, estimator=GCNConv, with_middle_output=False):
+        super().__init__()
+        self.act = F.relu
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.with_middle_output = with_middle_output
+        self.convs = torch.nn.ModuleList()
+        self.n_channels = len(hidden_channels)
+        self.convs.append(estimator(in_channels, hidden_channels[0]))
+        for i in range(self.n_channels - 1):
+            self.convs.append(estimator(hidden_channels[i], hidden_channels[i]))
+            self.convs.append(estimator(hidden_channels[i], hidden_channels[i + 1]))
+
+        for i in range(self.n_channels, 1, -1):
+            self.convs.append(estimator(hidden_channels[i - 1], hidden_channels[i - 1]))
+            self.convs.append(estimator(hidden_channels[i - 1] + hidden_channels[i - 2], hidden_channels[i - 2]))
+
+        self.convs.append(estimator(hidden_channels[0], hidden_channels[0]))
+        self.convs.append(estimator(hidden_channels[0], out_channels))
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        for conv in self.convs:
+            conv.reset_parameters()
+
+    def forward(self, data):
+        """"""
+        xvec = []
+        x = data.x
+        edge_index = data.edge_index
+        edge_weight = data.edge_attr
+        edge_weight = edge_weight / edge_weight.max()
+
+        for i in range(self.n_channels):
+            x = self.convs[2 * i](x, edge_index, edge_weight)
+            x = self.act(x)
+            x = self.convs[2 * i + 1](x, edge_index, edge_weight)
+            x = self.act(x)
+            xvec.append(x)
+        z = xvec.pop()
+        for i in range(self.n_channels, 2 * self.n_channels - 1):
+            y = xvec.pop()
+            x = torch.cat([x, y], dim=-1)
+            x = self.convs[2 * i](x, edge_index, edge_weight)
+            x = self.act(x)
+            x = self.convs[2 * i + 1](x, edge_index, edge_weight)
+            x = self.act(x)
+
+        x = self.convs[-1](x, edge_index, edge_weight)
+        if self.with_middle_output:
+            return x, z
+        else:
+            return x
+
+
+class UNet4(nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels, with_middle_output=False):
+        super().__init__()
+        self.act = F.relu
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.with_middle_output = with_middle_output
+        self.convs = torch.nn.ModuleList()
+        self.n_channels = len(hidden_channels)
+        self.convs.append(GCNConv(in_channels, hidden_channels[0]))
+        for i in range(self.n_channels - 1):
+            self.convs.append(GATConv(hidden_channels[i], hidden_channels[i]))
+            self.convs.append(GCNConv(hidden_channels[i], hidden_channels[i + 1]))
+
+        for i in range(self.n_channels, 1, -1):
+            self.convs.append(GATConv(hidden_channels[i - 1], hidden_channels[i - 1]))
+            self.convs.append(GATConv(hidden_channels[i - 1] + hidden_channels[i - 2], hidden_channels[i - 2]))
+
+        self.convs.append(GATConv(hidden_channels[0], hidden_channels[0]))
+        self.convs.append(GATConv(hidden_channels[0], out_channels))
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        for conv in self.convs:
+            conv.reset_parameters()
+
+    def forward(self, data):
+        """"""
+        xvec = []
+        x = data.x
+        edge_index = data.edge_index
+
+        for i in range(self.n_channels):
+            x = self.convs[2 * i](x, edge_index)
+            x = self.act(x)
+            x = self.convs[2 * i + 1](x, edge_index)
+            x = self.act(x)
+            xvec.append(x)
+        z = xvec.pop()
+        for i in range(self.n_channels, 2 * self.n_channels - 1):
+            y = xvec.pop()
+            x = torch.cat([x, y], dim=-1)
+            x = self.convs[2 * i](x, edge_index)
+            x = self.act(x)
+            x = self.convs[2 * i + 1](x, edge_index)
+            x = self.act(x)
+
+        x = self.convs[-1](x, edge_index)
+        if self.with_middle_output:
+            return x, z
+        else:
+            return x

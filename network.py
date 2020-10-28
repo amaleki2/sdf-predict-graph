@@ -26,7 +26,7 @@ class UNet_general(nn.Module):
         in_channels, hidden_channels, out_channels = self.params
         estimator = self.estimator
         n_channels = len(hidden_channels)
-        self.estimators.append(estimator(in_channels, hidden_channels[0]))
+        self.estimators.append(estimator(in_channels, hidden_channels[0], **self.kwargs))
         for i in range(n_channels - 1):
             self.estimators.append(estimator(hidden_channels[i], hidden_channels[i], **self.kwargs))
             self.estimators.append(estimator(hidden_channels[i], hidden_channels[i + 1], **self.kwargs))
