@@ -117,8 +117,36 @@ def plot_results(model, data, ndata=5, levels=None, border=None, save_name=""):
             plt.gcf().colorbar(p, cax=cbar_ax)
             plt.show()
 
+            
+def plot_results_diff(model, data, ndata=5, levels=None, border=None, save_name=""):
+    device = 'cpu'
+    model = model.to(device)
+    model.load_state_dict(torch.load("models/model" + save_name + ".pth", map_location=device))
+    model.eval()
+    with torch.no_grad():
+        for i, d in enumerate(data):
+            if i > ndata:
+                break
+            d = d.to(device=device)
+            pred = model(d)
+            cells = d.face.numpy()
+            points = d.x.numpy()
+            points[:, 2] = 0.
+            mesh = meshio.Mesh(points=points, cells=[("triangle", cells.T)])
 
-def plot_results_pxl(model, data, ndata=5, save_name=""):
+            plt.figure(figsize=(12, 5))
+            plt.subplot(1, 2, 1)
+            plot_mesh(mesh, vals=pred.numpy()[:, 0], with_colorbar=True, levels=levels, border=border)
+            plt.gca().set_xticks([])
+            plt.gca().set_yticks([])
+            plt.subplot(1, 2, 2)
+            p = plot_mesh(mesh, vals=pred.numpy()[:, 0] - d.y.numpy()[:, 0], with_colorbar=True, levels=None, border=border)
+            plt.gca().set_xticks([])
+            plt.gca().set_yticks([])
+            plt.show()
+
+
+def plot_results_pxl(model, data, ndata=5, save_name="", levels=[-0.2, 0, 0.4, .8]):
     loss_history = np.load("models/loss" + save_name + ".npy")
     plt.plot(loss_history)
     plt.yscale('log')
@@ -128,7 +156,9 @@ def plot_results_pxl(model, data, ndata=5, save_name=""):
     model.load_state_dict(torch.load("models/model" + save_name + ".pth", map_location=device))
     model.eval()
     with torch.no_grad():
-        for i, d in enumerate(train_data):
+        for i, d in enumerate(data):            
+            if i > ndata:
+                break
             d = d.to(device=device)
             pred = model(d)
             points = d.x.numpy()
@@ -136,18 +166,33 @@ def plot_results_pxl(model, data, ndata=5, save_name=""):
             plt.figure(figsize=(12, 5))
             plt.subplot(1, 2, 1)
             plt.contourf(pred.reshape(128, 128))
+            cn = plt.contour(pred.reshape(128, 128), levels=levels, colors='w')
+            plt.clabel(cn, fmt='%0.2f', colors='k', fontsize=10)
             plt.gca().set_xticks([])
             plt.gca().set_yticks([])
             plt.subplot(1, 2, 2)
-            plt.contourf(d.y.numpy().reshape(128, 128))
+            p = plt.contourf(d.y.numpy().reshape(128, 128))
+            cn = plt.contour(d.y.numpy().reshape(128, 128), levels=levels, colors='w')
+            plt.clabel(cn, fmt='%0.2f', colors='k', fontsize=10)
             plt.gca().set_xticks([])
             plt.gca().set_yticks([])
+            plt.gcf().subplots_adjust(right=0.8)
+            cbar_ax = plt.gcf().add_axes([0.85, 0.15, 0.05, 0.7])
+            plt.gcf().colorbar(p, cax=cbar_ax)
             plt.show()
-            if i > ndata:
-                break
 
+            plt.figure(figsize=(12, 5))
+            plt.subplot(1, 2, 1)
+            for idx in [30, 64, 100]:
+                plt.plot(np.linspace(-1, 1, 128), pred.reshape(128, 128)[idx, :])
+                plt.plot(np.linspace(-1, 1, 128), d.y.numpy().reshape(128, 128)[idx, :], linestyle='--')
+            plt.subplot(1, 2, 2)
+            for idx in [30, 64, 100]:
+                plt.plot(np.linspace(-1, 1, 128), pred.reshape(128, 128)[:, idx])
+                plt.plot(np.linspace(-1, 1, 128), d.y.numpy().reshape(128, 128)[:, idx], linestyle='--')
 
-def plot_results_over_line(model, data, ndata=5, save_name=""):
+                
+def plot_results_over_line(model, data, lines=(-0.5, 0, 0.5), ndata=5, save_name=""):
     device = 'cpu'
     model = model.to(device)
     model.load_state_dict(torch.load("models/model" + save_name + ".pth", map_location=device))
@@ -167,19 +212,13 @@ def plot_results_over_line(model, data, ndata=5, save_name=""):
             mesh = meshio.Mesh(points=points, cells=[("triangle", cells.T)])
 
             plt.figure(figsize=(12, 5))
-            plt.subplot(2, 1, 1)
-            plot_mesh_onto_line(mesh, val=pred, x=-0.5)
-            plot_mesh_onto_line(mesh, val=pred, x=0.0)
-            plot_mesh_onto_line(mesh, val=pred, x=0.5)
-            plot_mesh_onto_line(mesh, val=gt, x=-0.5, linestyle="--")
-            plot_mesh_onto_line(mesh, val=gt, x=0.0, linestyle="--")
-            plot_mesh_onto_line(mesh, val=gt, x=0.5, linestyle="--")
+            plt.subplot(1, 2, 1)
+            for line in lines:
+                plot_mesh_onto_line(mesh, val=pred, x=line)
+                plot_mesh_onto_line(mesh, val=gt, x=line, linestyle="--")
 
-            plt.subplot(2, 1, 2)
-            plot_mesh_onto_line(mesh, val=pred, y=-0.5)
-            plot_mesh_onto_line(mesh, val=pred, y=0.0)
-            plot_mesh_onto_line(mesh, val=pred, y=0.5)
-            plot_mesh_onto_line(mesh, val=gt, y=-0.5, linestyle="--")
-            plot_mesh_onto_line(mesh, val=gt, y=0.0, linestyle="--")
-            plot_mesh_onto_line(mesh, val=gt, y=0.5, linestyle="--")
+            plt.subplot(1, 2, 2)
+            for line in lines:
+                plot_mesh_onto_line(mesh, val=pred, y=line)
+                plot_mesh_onto_line(mesh, val=gt, y=line, linestyle="--")
             plt.show()

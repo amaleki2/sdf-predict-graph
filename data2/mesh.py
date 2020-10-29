@@ -9,7 +9,7 @@ if os.name == 'posix':
     sys.path.insert(1, '/home/ansysai/amaleki/sdf-prediction/')
 else:
     sys.path.insert(1, 'C:/Users/amaleki/OneDrive - ANSYS, Inc/Projects/sdf-prediction/')
-from data.geoms import Rectangle, Circle, plot_sdf
+from data.geoms import Rectangle, Circle, nGon, Diamond, plot_sdf
 
 
 class MeshData:
@@ -38,21 +38,36 @@ class MeshData:
             if self.refined: fid.write("mesh is refined at boundary with skip parameter: %d\n"%self.skip_points_every)
 
     def generate_random_geometries(self):
-        # random parameters of geometry
-        l = np.random.random() * 0.5 + 0.2
-        w = np.random.random() * 0.5 + 0.2
+        # create geometry from scipy model
+        g = np.random.choice(self.geometries)
+        if g == "Circle":
+            l = np.random.random() * 0.5 + 0.2
+            geom = Circle(l)
+        elif g == "Rectangle":
+            l = np.random.random() * 0.5 + 0.2
+            w = np.random.random() * 0.5 + 0.2
+            geom = Rectangle((l, w))
+        elif g == "nGon":
+            n_vertices = 5
+            vertices = []
+            for i in range(n_vertices):
+                th = np.random.random() * np.pi / n_vertices + 2 * i * np.pi / n_vertices
+                ra = np.random.random() * 0.5 + 0.2
+                vertices.append([ra * np.cos(th), ra * np.sin(th)])
+            geom = nGon(vertices)
+        elif g == "Diamond":
+            l = np.random.random() * 0.5 + 0.2
+            w = np.random.random() * 0.5 + 0.2
+            geom = Diamond((l, w))
+        else:
+            raise(ValueError("geometry %s not recognized"%g))
+
+        # randomly rotate and translate geometry
         r = np.random.random() * np.pi
         tx = np.random.random() * 1.0 - 0.5
         ty = np.random.random() * 1.0 - 0.5
 
-        # create geometry from scipy model
-        g = np.random.choice(self.geometries)
-        if g == "Rectangle":
-            geom = Rectangle((l, w)).rotate(r).translate((tx, ty))
-        elif g == "Circle":
-            geom = Circle(l).translate((tx, ty))
-        else:
-            raise(NotImplementedError())
+        geom = geom.rotate(r).translate((tx, ty))
 
         # evaluate sdf and img
         sdf = geom.eval_sdf(self._x, self._y)
@@ -130,3 +145,4 @@ class MeshData:
         meshio.write(data_folder + "sdf" + name + ".vtk", sdf_mesh)
 
 
+#
