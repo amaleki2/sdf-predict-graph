@@ -5,10 +5,10 @@ import sys
 assert len(sys.argv) >= 3
 model_name, data_folder = sys.argv[1:3]
 
-edge_weight = True
+edge_weight = False
 n_objects, batch_size, n_epoch = 100, 15, 1500
 lr_0, step_size, gamma, radius = 0.001, 200, 0.6, 0.1
-in_channels, hidden_channels, out_channels = 3, [32, 64, 128, 64, 32], 1
+in_channels, hidden_channels, out_channels = 9, [32, 64, 128, 64, 32], 1
 #[32, 64, 64, 128, 128, 64, 64, 32]
 if "graph" in data_folder:
     train_data = get_sdf_data_loader(n_objects, data_folder, batch_size, edge_weight=edge_weight)

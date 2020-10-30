@@ -143,6 +143,3 @@ class MeshData:
         # save sdf.vtk files
         sdf_mesh = meshio.Mesh(points=sdf_points, cells=[('triangle', sdf_cells)])
         meshio.write(data_folder + "sdf" + name + ".vtk", sdf_mesh)
-
-
-#

@@ -301,6 +301,7 @@ def numpy_array_intersect(a, b):
     bset = set([tuple(x) for x in b])
     return np.array([x for x in aset & bset])
 
+
 def points_to_knn(points, k, max_radius):
     tree = KDTree(points)
     indices = tree.query(points, k+1)[1]
@@ -356,6 +357,31 @@ def mesh_to_edge_neighbours(graph_nodes, mesh_edges, mesh_cells, connection_type
     return edge_neighbours
 
 
+def mesh_to_cell_neighbours(graph_nodes, mesh_cells, method="neighbour", radius=None):
+    if method in ["vertex", "edge"]:
+        n_cells = mesh_cells.shape[0]
+        edge_neighbours = []
+        min_connection = 1 if method == "vertex" else 2
+        for i in range(n_cells):
+            cell_i = mesh_cells[i, :]
+            for j in range(i + 1, n_cells):
+                cell_j = mesh_cells[j, :]
+                if len(np.intersect1d(cell_i, cell_j)) >= min_connection:
+                    edge_neighbours.append([i, j])
+    elif method == "neighbour":
+        assert radius is not None
+        cell_centers = np.mean(graph_nodes[:, :, :2], axis=1)
+        edge_neighbours = points_to_neighbours(cell_centers, radius, type="circular")
+    else:
+        raise(ValueError("method is not recognized."))
+
+    return edge_neighbours
+
+
+
+
+
+
 def compute_edge_weight(nodes, edge, method):
     if method == "length":
         dist = distance_matrix(nodes, nodes)
@@ -366,26 +392,21 @@ def compute_edge_weight(nodes, edge, method):
     return 1 / weights
 
 
-def get_sdf_data_loader(n_objects, data_folder, batch_size, mesh_folder=None,
+def get_sdf_data_loader(n_objects, data_folder, batch_size,
                         reversed_edge_already_included=False, edge_weight=False):
     graph_data_list = []
     print("preparing sdf data loader")
-    if mesh_folder:
-        print('reading pixel data for target')
-        pxl_size = 128
-        xc, yc = np.meshgrid(np.linspace(-1, 1, pxl_size), np.linspace(-1, 1, pxl_size))
-        xc, yc = xc.reshape(-1, 1), yc.reshape(-1, 1)
-
     for i in range(n_objects):
         graph_nodes = np.load(data_folder + "graph_nodes%d.npy" % i).astype(float)
         x = graph_nodes.copy()
-        x[:, 2] = (x[:, 2] < 0).astype(float)
-        if mesh_folder:
-            y = np.load(mesh_folder + "sdf_pxl%d.npy"% i).reshape(-1, 1)
-            y = np.concatenate([xc, yc, y], axis=-1)
-        else:
+        if np.ndim(x) == 2:
+            x[:, 2] = (x[:, 2] < 0).astype(float)
             y = graph_nodes.copy()[:, 2]
-            y = y.reshape(-1, 1)
+        else:  # np.ndim(x) == 3
+            x[:, :, 2] = (x[:, :, 2] < 0).astype(float)
+            x = x.reshape(x.shape[0], -1)
+            y = graph_nodes.copy()[:, :, 2]
+            y = np.mean(y, axis=-1)
 
         graph_cells = np.load(data_folder + "graph_cells%d.npy" % i).astype(int)
         graph_cells = graph_cells.T
