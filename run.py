@@ -9,7 +9,7 @@ edge_weight = False
 n_objects, batch_size, n_epoch = 100, 15, 1500
 lr_0, step_size, gamma, radius = 0.001, 200, 0.6, 0.1
 in_channels, hidden_channels, out_channels = 9, [32, 64, 128, 64, 32], 1
-#[32, 64, 64, 128, 128, 64, 64, 32]
+
 if "graph" in data_folder:
     train_data = get_sdf_data_loader(n_objects, data_folder, batch_size, edge_weight=edge_weight)
 else:
@@ -32,7 +32,7 @@ else:
 
 save_name = model_name + "_" + data_folder
 save_name = save_name.replace("/", "_")
-train_model(model, train_data, lr_0=lr_0, n_epoch=n_epoch, with_borderless_loss=True, step_size=step_size,
+train_model(model, train_data, lr_0=lr_0, n_epoch=n_epoch, with_borderless_loss=False, step_size=step_size,
             gamma=gamma, radius=radius, with_eikonal_loss=False, save_name=save_name, print_every=100)
 # plot_results(model, train_data, ndata=5, levels=[-0.2, 0, 0.2, 0.4], border=0.1, save_name="test")
 # plot_results_over_line(model, train_data, ndata=5, save_name="test")

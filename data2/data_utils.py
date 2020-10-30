@@ -406,7 +406,7 @@ def get_sdf_data_loader(n_objects, data_folder, batch_size,
             x[:, :, 2] = (x[:, :, 2] < 0).astype(float)
             x = x.reshape(x.shape[0], -1)
             y = graph_nodes.copy()[:, :, 2]
-            y = np.mean(y, axis=-1)
+            y = np.mean(y, axis=-1, keepdims=True)
 
         graph_cells = np.load(data_folder + "graph_cells%d.npy" % i).astype(int)
         graph_cells = graph_cells.T
