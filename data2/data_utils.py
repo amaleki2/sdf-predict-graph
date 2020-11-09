@@ -28,8 +28,11 @@ def create_geo_file(img, lc1=0.2, lc2=0.1, skip=1, geo_file="img.geo", refined=T
     edges = edges * 2 / (img.shape[0] - 1) - 1
 
     obj_center = np.mean(edges, axis=0)
-    inner_edges = 2/3 * obj_center + 1/3 * edges
+    edges = np.array(sorted(edges.tolist(), key=lambda x: np.arctan2(x[1]-obj_center[1], x[0]-obj_center[0])))  # sort edges azimuthally.
 
+    inner_edges = 0.95 * edges + 0.05 * obj_center
+    outer_edges = 1.05 * edges - 0.05 * obj_center
+    np.clip(outer_edges, a_min=-1, a_max=1)
     with open(geo_file, "w") as fid:
         fid.write("lc1 = %0.3f; \n" % lc1)
         fid.write("lc2 = %0.3f; \n\n" % lc2)
@@ -43,23 +46,25 @@ def create_geo_file(img, lc1=0.2, lc2=0.1, skip=1, geo_file="img.geo", refined=T
         if refined:
             fid.write("// control points on the border of object \n")
             p_idx = 5
-            EPS = 0.001
-            for e in edges[::skip]:
-                if e[1] == -1:
-                    fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, e[1] + EPS, e[0]))
-                elif e[1] == 1:
-                    fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, e[1] - EPS, e[0]))
-                elif e[0] == -1:
-                    fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, e[1], e[0] + EPS))
-                elif e[0] == 1:
-                    fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, e[1], e[0] - EPS))
-                else:
-                    fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, e[1], e[0]))
-                    p_idx += 1
-            fid.write("\n")
-            for e in inner_edges[::skip * 2]:
+            for e in inner_edges[::skip]:
                 fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc1}; \n" % (p_idx, e[1], e[0]))
                 p_idx += 1
+
+            EPS = 0.001
+            for e in outer_edges[::skip]:
+                # fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, e[1], e[0]))
+                if e[1] < -1 + EPS:
+                    fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, -0.999, e[0]))
+                elif e[1] > 1 - EPS:
+                    fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, 0.999, e[0]))
+                elif e[0] < -1 + EPS:
+                    fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, e[1], -0.999))
+                elif e[0] > 1 - EPS:
+                    fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, e[1], 0.999))
+                else:
+                    fid.write("Point(%d) = {%0.3f, %0.3f, 0.0, lc2}; \n" % (p_idx, e[1], e[0]))
+                p_idx += 1
+            fid.write("\n")
 
         fid.write("// boundary lines of rectangle \n")
         fid.write("Line(1) = {1, 2}; \n")
@@ -72,8 +77,8 @@ def create_geo_file(img, lc1=0.2, lc2=0.1, skip=1, geo_file="img.geo", refined=T
 
         if refined:
             fid.write("// control points mesh size \n")
-            for p in range(p_idx, 5, -1):
-                fid.write("Point{%d} In Surface{1}; \n" % (p - 1))
+            for p in range(p_idx):
+                fid.write("Point{%d} In Surface{1}; \n" % (p + 1))
 
 
 def geo2vtk(geo_file, vtk_file=None):
@@ -402,6 +407,7 @@ def get_sdf_data_loader(n_objects, data_folder, batch_size,
         if np.ndim(x) == 2:
             x[:, 2] = (x[:, 2] < 0).astype(float)
             y = graph_nodes.copy()[:, 2]
+            y = y.reshape(-1, 1)
         else:  # np.ndim(x) == 3
             x[:, :, 2] = (x[:, :, 2] < 0).astype(float)
             x = x.reshape(x.shape[0], -1)

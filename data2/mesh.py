@@ -104,12 +104,12 @@ class MeshData:
 
         # plot
         if plot:
-            plot_sdf(img, sdf, show=False)
-            plt.subplot(2, 2, 3)
+            # plot_sdf(img, sdf, show=False)
+            # plt.subplot(2, 2, 3)
             plot_mesh(sdf_mesh)
             plot_mesh(sdf_mesh, vals=(nodes_sdf < 0).astype(int))
-            plt.subplot(2, 2, 4)
-            plot_mesh(sdf_mesh, vals=nodes_sdf, with_colorbar=True)
+            # plt.subplot(2, 2, 4)
+            # plot_mesh(sdf_mesh, vals=nodes_sdf, with_colorbar=True)
             plt.show()
 
         return geom
@@ -143,3 +143,16 @@ class MeshData:
         # save sdf.vtk files
         sdf_mesh = meshio.Mesh(points=sdf_points, cells=[('triangle', sdf_cells)])
         meshio.write(data_folder + "sdf" + name + ".vtk", sdf_mesh)
+
+
+if __name__ == "__main__":
+    mesh_folder = "C:/Users/amaleki/Downloads/"
+    geometries = ["Rectangle", "Circle", "nGon", "Diamond"]
+    mesh_coarse_size, mesh_fine_size, skip_every, refined = 0.06, 0.03, 2, True
+    mesh_data = MeshData(geometries, mesh_coarse_size, mesh_fine_size, refined, skip_every, save_sdf_pxl=True)
+
+    for i in range(10):
+        mesh_data.write_mesh_features_to_file(mesh_folder)
+        geom = mesh_data.generate_sdf_mesh(mesh_folder, plot=True)
+
+

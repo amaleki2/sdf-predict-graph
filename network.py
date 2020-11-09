@@ -7,9 +7,6 @@ from torch_geometric.utils import (dropout_adj, add_self_loops, sort_edge_index,
                                    remove_self_loops)
 
 
-
-
-
 class UNet_general(nn.Module):
     def __init__(self, estimator, params, requires_edge_weight=True, **kwargs):
         super().__init__()
