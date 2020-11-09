@@ -16,11 +16,14 @@ l2_loss = nn.MSELoss
 def borderless_loss(pred, target, loss_func, data, radius):
     mask = torch.logical_and(torch.abs(data.x[:, 0]) < 1 - radius,
                              torch.abs(data.x[:, 1]) < 1 - radius)
-    #mask = torch.logical_and(mask, data.y > 0.4)
     loss = loss_func(reduction='none')(pred, target)
     loss_masked = loss[mask]
     loss_masked_reduced = torch.mean(loss_masked)
-    return loss_masked_reduced
+    mask2 = torch.abs(data.y < 0)
+    loss_inner = loss[mask2]
+    loss_inner_reduced = torch.mean(loss_inner)
+    loss_final = loss_masked_reduced + loss_inner_reduced * 10
+    return loss_final
 
 
 def eikonal_loss(pred, xy, device='cuda', retain_graph=True):
@@ -54,7 +57,6 @@ def train_model(model, train_data, lr_0=0.001, n_epoch=101, loss_func=l1_loss,
     optimizer = torch.optim.Adam(model.parameters(), lr=lr_0)  # , weight_decay=0.001)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
     running_loss_list = []
-
     for epoch in range(1, n_epoch):
         running_loss = 0
         for d in train_data:
@@ -232,7 +234,7 @@ def plot_results_for_cells(model, data, ndata=5, levels=None, border=None, save_
 
     device = 'cpu'
     model = model.to(device)
-    # model.load_state_dict(torch.load("models/model" + save_name + ".pth", map_location=device))
+    model.load_state_dict(torch.load("models/model" + save_name + ".pth", map_location=device))
     model.eval()
     with torch.no_grad():
         for i, d in enumerate(data):
