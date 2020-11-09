@@ -58,7 +58,6 @@ def train_model(model, train_data, lr_0=0.001, n_epoch=101, loss_func=l1_loss,
     optimizer = torch.optim.Adam(model.parameters(), lr=lr_0)  # , weight_decay=0.001)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
     running_loss_list = []
-
     for epoch in range(1, n_epoch):
         running_loss = 0
         for d in train_data:
