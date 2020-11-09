@@ -402,6 +402,7 @@ def get_sdf_data_loader(n_objects, data_folder, batch_size,
         if np.ndim(x) == 2:
             x[:, 2] = (x[:, 2] < 0).astype(float)
             y = graph_nodes.copy()[:, 2]
+            y = y.reshape(-1, 1)
         else:  # np.ndim(x) == 3
             x[:, :, 2] = (x[:, :, 2] < 0).astype(float)
             x = x.reshape(x.shape[0], -1)

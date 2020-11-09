@@ -6,9 +6,9 @@ assert len(sys.argv) >= 3
 model_name, data_folder = sys.argv[1:3]
 
 edge_weight = False
-n_objects, batch_size, n_epoch = 100, 15, 1500
+n_objects, batch_size, n_epoch = 100, 5, 1500
 lr_0, step_size, gamma, radius = 0.001, 200, 0.6, 0.1
-in_channels, hidden_channels, out_channels = 9, [32, 64, 128, 64, 32], 1
+in_channels, hidden_channels, out_channels = 3, [32, 64, 128, 64, 32], 1
 
 if "graph" in data_folder:
     train_data = get_sdf_data_loader(n_objects, data_folder, batch_size, edge_weight=edge_weight)
@@ -19,7 +19,8 @@ if model_name == "gcn":
     model = UNet_gcn_conv(in_channels, hidden_channels, out_channels)
 elif model_name == "gat":
     head = 1
-    model = UNet_gat_conv(in_channels, hidden_channels, out_channels, heads=head)
+    negative_slope = 0.2
+    model = UNet_gat_conv(in_channels, hidden_channels, out_channels, heads=head, negative_slope=negative_slope)
 elif model_name == "feast":
     head = 1
     model = UNet_feast_conv(in_channels, hidden_channels, out_channels, heads=head)

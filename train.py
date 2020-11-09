@@ -5,6 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from data2 import plot_mesh, plot_mesh_onto_line
 
+from scipy.spatial import Delaunay
+
 import torch
 import torch.nn as nn
 
@@ -15,11 +17,14 @@ l2_loss = nn.MSELoss
 def borderless_loss(pred, target, loss_func, data, radius):
     mask = torch.logical_and(torch.abs(data.x[:, 0]) < 1 - radius,
                              torch.abs(data.x[:, 1]) < 1 - radius)
-    #mask = torch.logical_and(mask, data.y > 0.4)
     loss = loss_func(reduction='none')(pred, target)
     loss_masked = loss[mask]
     loss_masked_reduced = torch.mean(loss_masked)
-    return loss_masked_reduced
+    mask2 = torch.abs(data.y < 0)
+    loss_inner = loss[mask2]
+    loss_inner_reduced = torch.mean(loss_inner)
+    loss_final = loss_masked_reduced + loss_inner_reduced * 10
+    return loss_final
 
 
 def eikonal_loss(pred, xy, device='cuda', retain_graph=True):
@@ -221,4 +226,43 @@ def plot_results_over_line(model, data, lines=(-0.5, 0, 0.5), ndata=5, save_name
             for line in lines:
                 plot_mesh_onto_line(mesh, val=pred, y=line)
                 plot_mesh_onto_line(mesh, val=gt, y=line, linestyle="--")
+            plt.show()
+            
+            
+def plot_results_for_cells(model, data, ndata=5, levels=None, border=None, save_name=""):
+    loss_history = np.load("models/loss" + save_name + ".npy")
+    plt.plot(loss_history)
+    plt.yscale('log')
+
+    device = 'cpu'
+    model = model.to(device)
+    model.load_state_dict(torch.load("models/model" + save_name + ".pth", map_location=device))
+    model.eval()
+    with torch.no_grad():
+        for i, d in enumerate(data):
+            if i > ndata:
+                break
+            d = d.to(device=device)
+            pred = model(d)
+            xmean = np.mean(d.x.numpy()[:, 0::3], axis=-1)
+            ymean = np.mean(d.x.numpy()[:, 1::3], axis=-1)
+            points = np.stack((xmean, ymean))
+            tri = Delaunay(points.T)
+            cells = tri.simplices
+            zmean = np.zeros_like(xmean)
+            points = np.stack((xmean, ymean, zmean))
+            mesh = meshio.Mesh(points=points.T, cells=[("triangle", cells)])
+
+            plt.figure(figsize=(12, 5))
+            plt.subplot(1, 2, 1)
+            plot_mesh(mesh, vals=pred.numpy()[:, 0], with_colorbar=False, levels=levels, border=border)
+            plt.gca().set_xticks([])
+            plt.gca().set_yticks([])
+            plt.subplot(1, 2, 2)
+            p = plot_mesh(mesh, vals=d.y.numpy()[:, 0], with_colorbar=False, levels=levels, border=border)
+            plt.gca().set_xticks([])
+            plt.gca().set_yticks([])
+            plt.gcf().subplots_adjust(right=0.8)
+            cbar_ax = plt.gcf().add_axes([0.85, 0.15, 0.05, 0.7])
+            plt.gcf().colorbar(p, cax=cbar_ax)
             plt.show()
