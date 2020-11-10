@@ -1,4 +1,5 @@
 from tqdm import tqdm
+from scipy.spatial import Delaunay
 from data2.data_utils import *
 
 
@@ -15,7 +16,7 @@ class GraphData:
             self.kwargs["edge_length"] = 1
         # check graph node
         assert self.graph_node in ["vertex", "edge", "cell"], \
-            "graph node has to be either of `vertex, `edge` or `cell` "
+            "graph node has to be either of `vertex`, `edge` or `cell` "
         assert self.graph_node != "vertex" or self.graph_edge in ["edge", "neighbour", "knn"], \
             "with `vertex` as graph node, graph edges can only be set to `edge`, `neighbour` or `knn`"
         assert self.graph_node != "edge" or self.graph_edge in ["vertex", "cell"], \
@@ -85,9 +86,6 @@ class GraphData:
         graph_nodes, graph_cells = self.read_mesh(mesh_folder + "sdf" + name + ".vtk")
         if self.graph_edge == "edge":
             graph_edges = cells_to_edges(graph_cells)
-            edge_length = self.kwargs["edge_length"]
-            if edge_length > 1:
-                graph_edges = expand_edge_connection(np.array(graph_edges).T, k=edge_length)
         elif self.graph_edge == "neighbour":
             filter_type = self.kwargs["filter_type"]
             filter_radius = self.kwargs["radius"]
@@ -98,6 +96,10 @@ class GraphData:
             graph_edges = points_to_knn(graph_nodes[:, :2], filter_k, filter_radius)
         else:
             raise(NotImplementedError())
+
+        edge_length = self.kwargs["edge_length"]
+        if edge_length > 1:
+            graph_edges = expand_edge_connection(np.array(graph_edges).T, k=edge_length)
 
         np.save(graph_folder + "graph_nodes" + name + ".npy", graph_nodes)
         np.save(graph_folder + "graph_cells" + name + ".npy", graph_cells)
@@ -119,6 +121,10 @@ class GraphData:
         graph_edges = mesh_to_edge_neighbours(graph_nodes, mesh_edges, mesh_cells, self.graph_edge)
         graph_cells = mesh_cells
 
+        edge_length = self.kwargs["edge_length"]
+        if edge_length > 1:
+            graph_edges = expand_edge_connection(np.array(graph_edges).T, k=edge_length)
+
         np.save(graph_folder + "graph_nodes" + name + ".npy", graph_nodes)
         np.save(graph_folder + "graph_cells" + name + ".npy", graph_cells)
         np.save(graph_folder + "graph_edges" + name + ".npy", graph_edges)
@@ -132,7 +138,14 @@ class GraphData:
         graph_nodes = np.array(graph_nodes)
         radius = None if "radius" not in self.kwargs else self.kwargs["radius"]
         graph_edges = mesh_to_cell_neighbours(graph_nodes, mesh_cells, method=self.graph_edge, radius=radius)
-        graph_cells = mesh_cells
+
+        edge_length = self.kwargs["edge_length"]
+        if edge_length > 1:
+            graph_edges = expand_edge_connection(np.array(graph_edges).T, k=edge_length)
+
+        mid_points = np.mean(graph_nodes[:, :, :2], axis=1)
+        tri = Delaunay(mid_points)
+        graph_cells = tri.simplices.T
         np.save(graph_folder + "graph_nodes" + name + ".npy", graph_nodes)
         np.save(graph_folder + "graph_cells" + name + ".npy", graph_cells)
         np.save(graph_folder + "graph_edges" + name + ".npy", graph_edges)

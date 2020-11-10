@@ -7,9 +7,9 @@ import numpy as np
 import networkx as nx
 import matplotlib.tri as tri
 import matplotlib.pyplot as plt
+from itertools import combinations
 from scipy.sparse import coo_matrix
 from scipy.spatial import distance_matrix, KDTree
-from itertools import product
 
 
 def compute_edges_img(img):
@@ -187,6 +187,7 @@ def plot_mesh_onto_line(mesh, val, x=None, y=None, show=False, linestyle="-"):
     plt.plot(plotting_axes, val_over_line, linestyle=linestyle)
     if show: plt.show()
 
+
 def cells_to_edges(cells):
     edge_pairs = []
     for cell in cells:
@@ -194,7 +195,14 @@ def cells_to_edges(cells):
             edge = sorted([cell[p1], cell[p2]])
             if edge not in edge_pairs:
                 edge_pairs.append(edge)
+    # edge_pairs = cells[:, :2]  # edge(v0, v1)
+    # edge_pairs = np.concatenate((edge_pairs, cells[:, 1:]))  # edge(v1, v2)
+    # edge_pairs = np.concatenate((edge_pairs, cells[:, 0:3:2]))  # edge(v0, v2)
+    # edge_pairs = np.sort(edge_pairs, axis=1)  # sort and remove duplicates
+    # edge_pairs = np.unique(edge_pairs, axis=0)
+    # edge_pairs = edge_pairs.tolist()
     return edge_pairs
+
 
 ### Graph funcitonalities ###
 def mesh_to_graph(mesh, vals=None):
@@ -362,29 +370,42 @@ def mesh_to_edge_neighbours(graph_nodes, mesh_edges, mesh_cells, connection_type
     return edge_neighbours
 
 
-def mesh_to_cell_neighbours(graph_nodes, mesh_cells, method="neighbour", radius=None):
-    if method in ["vertex", "edge"]:
-        n_cells = mesh_cells.shape[0]
-        edge_neighbours = []
-        min_connection = 1 if method == "vertex" else 2
-        for i in range(n_cells):
-            cell_i = mesh_cells[i, :]
-            for j in range(i + 1, n_cells):
-                cell_j = mesh_cells[j, :]
-                if len(np.intersect1d(cell_i, cell_j)) >= min_connection:
-                    edge_neighbours.append([i, j])
+def mesh_to_cell_neighbours(graph_nodes, mesh_cells, method="neighbour", radius=None, type="circular"):
+    edge_neighbours = []
+
+    if method == "vertex":
+        # old method, bad complexity.
+        # min_connection = 1 if method == "vertex" else 2
+        # for i in range(n_cells):
+        #     cell_i = mesh_cells[i, :]
+        #     for j in range(i + 1, n_cells):
+        #         cell_j = mesh_cells[j, :]
+        #         if len(np.intersect1d(cell_i, cell_j)) >= min_connection:
+        #             edge_neighbours.append([i, j])
+        n_nodes = mesh_cells.max() + 1
+        for i in range(n_nodes):
+            cells_with_node_i = np.any(mesh_cells == i, axis=1)
+            cells_with_node_i = np.where(cells_with_node_i)[0]
+            edge_neighbours += list(combinations(cells_with_node_i, 2))
+        edge_neighbours = np.array(edge_neighbours)
+        edge_neighbours = np.sort(edge_neighbours, axis=1)
+        edge_neighbours = np.unique(edge_neighbours, axis=0)
+
+    elif method == "edge":
+        mesh_edge = cells_to_edges(mesh_cells)
+        for i, j in mesh_edge:
+            cells_with_edge_ij = np.logical_and(np.any(mesh_cells == i, axis=1), np.any(mesh_cells == j, axis=1))
+            cells_with_edge_ij = np.where(cells_with_edge_ij)[0]
+            edge_neighbours += list(combinations(cells_with_edge_ij, 2))
+
     elif method == "neighbour":
         assert radius is not None
         cell_centers = np.mean(graph_nodes[:, :, :2], axis=1)
-        edge_neighbours = points_to_neighbours(cell_centers, radius, type="circular")
+        edge_neighbours = points_to_neighbours(cell_centers, radius, type=type)
     else:
         raise(ValueError("method is not recognized."))
 
     return edge_neighbours
-
-
-
-
 
 
 def compute_edge_weight(nodes, edge, method):
@@ -397,50 +418,59 @@ def compute_edge_weight(nodes, edge, method):
     return 1 / weights
 
 
-def get_sdf_data_loader(n_objects, data_folder, batch_size,
+def get_sdf_data_loader(n_objects, data_folder, batch_size, eval_frac=0.2,
                         reversed_edge_already_included=False, edge_weight=False):
-    graph_data_list = []
+
     print("preparing sdf data loader")
-    for i in range(n_objects):
-        graph_nodes = np.load(data_folder + "graph_nodes%d.npy" % i).astype(float)
-        x = graph_nodes.copy()
-        if np.ndim(x) == 2:
-            x[:, 2] = (x[:, 2] < 0).astype(float)
-            y = graph_nodes.copy()[:, 2]
-            y = y.reshape(-1, 1)
-        else:  # np.ndim(x) == 3
-            x[:, :, 2] = (x[:, :, 2] < 0).astype(float)
-            x = x.reshape(x.shape[0], -1)
-            y = graph_nodes.copy()[:, :, 2]
-            y = np.mean(y, axis=-1, keepdims=True)
+    random_idx = np.random.permutation(n_objects)
+    train_idx  = random_idx[:int(1-eval_frac)]
+    test_idx   = random_idx[int(1-eval_frac):]
 
-        graph_cells = np.load(data_folder + "graph_cells%d.npy" % i).astype(int)
-        graph_cells = graph_cells.T
-        graph_edges = np.load(data_folder + "graph_edges%d.npy" % i).astype(int)
-        if not reversed_edge_already_included:
-            graph_edges = add_reversed_edges(graph_edges)
-        graph_edges = graph_edges.T
-        n_edges = graph_edges.shape[1]
-        if edge_weight:
-            graph_edge_weights = np.load(data_folder + "graph_weights%d.npy" %i).astype(float)
-            if graph_edge_weights.shape[0] == n_edges:
-                pass
-            elif graph_edge_weights.shape[0] == n_edges // 2:
-                graph_edge_weights = np.concatenate([graph_edge_weights, graph_edge_weights])
+    train_graph_data_list = []
+    test_graph_data_list = []
+
+    for idx, graph_data_list in zip([train_idx, test_idx], [train_graph_data_list, test_graph_data_list]):
+        for i in idx:
+            graph_nodes = np.load(data_folder + "graph_nodes%d.npy" % i).astype(float)
+            x = graph_nodes.copy()
+            if np.ndim(x) == 2:
+                x[:, 2] = (x[:, 2] < 0).astype(float)
+                y = graph_nodes.copy()[:, 2]
+                y = y.reshape(-1, 1)
+            else:  # np.ndim(x) == 3
+                x[:, :, 2] = (x[:, :, 2] < 0).astype(float)
+                x = x.reshape(x.shape[0], -1)
+                y = graph_nodes.copy()[:, :, 2]
+                y = np.mean(y, axis=-1, keepdims=True)
+
+            graph_cells = np.load(data_folder + "graph_cells%d.npy" % i).astype(int)
+            graph_cells = graph_cells.T
+            graph_edges = np.load(data_folder + "graph_edges%d.npy" % i).astype(int)
+            if not reversed_edge_already_included:
+                graph_edges = add_reversed_edges(graph_edges)
+            graph_edges = graph_edges.T
+            n_edges = graph_edges.shape[1]
+            if edge_weight:
+                graph_edge_weights = np.load(data_folder + "graph_weights%d.npy" %i).astype(float)
+                if graph_edge_weights.shape[0] == n_edges:
+                    pass
+                elif graph_edge_weights.shape[0] == n_edges // 2:
+                    graph_edge_weights = np.concatenate([graph_edge_weights, graph_edge_weights])
+                else:
+                    raise("edge weight size is wrong.")
+                #graph_edge_weights = graph_edge_weights.reshape(-1, 1)
             else:
-                raise("edge weight size is wrong.")
-            #graph_edge_weights = graph_edge_weights.reshape(-1, 1)
-        else:
-            graph_edge_weights = np.ones(n_edges)
+                graph_edge_weights = np.ones(n_edges)
 
-        graph_data = Data(x=torch.from_numpy(x).type(torch.float32),
-                          y=torch.from_numpy(y).type(torch.float32),
-                          edge_index=torch.from_numpy(graph_edges).type(torch.long),
-                          edge_attr=torch.from_numpy(graph_edge_weights).type(torch.float32),
-                          face=torch.from_numpy(graph_cells).type(torch.long))
-        graph_data_list.append(graph_data)
-    train_data = DataLoader(graph_data_list, batch_size=batch_size)
-    return train_data
+            graph_data = Data(x=torch.from_numpy(x).type(torch.float32),
+                              y=torch.from_numpy(y).type(torch.float32),
+                              edge_index=torch.from_numpy(graph_edges).type(torch.long),
+                              edge_attr=torch.from_numpy(graph_edge_weights).type(torch.float32),
+                              face=torch.from_numpy(graph_cells).type(torch.long))
+            graph_data_list.append(graph_data)
+    train_data = DataLoader(train_graph_data_list, batch_size=batch_size)
+    test_data = DataLoader(test_graph_data_list, batch_size=batch_size)
+    return train_data, test_data
 
 
 def add_reversed_edges(edges):

@@ -15,7 +15,7 @@ mesh_folder = root_folder + "mesh/"
 #     geom = mesh_data.generate_sdf_mesh(mesh_folder, name=str(i), plot=plot)
 #     mesh_data.generated_augmented_sdf_mesh(geom, mesh_folder, name=str(i+n_objects))
 
-graph_folder = root_folder + "graph11/"
-graph_data = GraphData(graph_node="cell", graph_edge="neighbour", radius=[0.062], filter_type="circular")
+graph_folder = root_folder + "graph14/"
+graph_data = GraphData(graph_node="cell", graph_edge="edge", edge_length=2)
 graph_data.generate_graph_data(n_objects, mesh_folder, graph_folder=graph_folder)
 graph_data.write_graph_features_to_file(graph_folder)

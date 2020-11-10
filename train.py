@@ -19,11 +19,15 @@ def borderless_loss(pred, target, loss_func, data, radius):
     loss = loss_func(reduction='none')(pred, target)
     loss_masked = loss[mask]
     loss_masked_reduced = torch.mean(loss_masked)
-    mask2 = torch.abs(data.y < 0)
-    loss_inner = loss[mask2]
+    return loss_masked_reduced
+
+
+def inner_shale_loss(pred, target, loss_func, data):
+    mask = torch.abs(data.y < 0)
+    loss = loss_func(reduction='none')(pred, target)
+    loss_inner = loss[mask]
     loss_inner_reduced = torch.mean(loss_inner)
-    loss_final = loss_masked_reduced + loss_inner_reduced * 10
-    return loss_final
+    return loss_inner_reduced
 
 
 def eikonal_loss(pred, xy, device='cuda', retain_graph=True):
@@ -45,7 +49,7 @@ def find_best_gpu():
         return gpu_id
 
 
-def train_model(model, train_data, lr_0=0.001, n_epoch=101, loss_func=l1_loss,
+def train_model(model, train_data, test_data, lr_0=0.001, n_epoch=101, loss_func=l1_loss,
                 with_borderless_loss=True, with_eikonal_loss=False,
                 print_every=10, step_size=50, gamma=0.5, radius=0.1, save_name=""):
     print("training begins")
@@ -79,9 +83,24 @@ def train_model(model, train_data, lr_0=0.001, n_epoch=101, loss_func=l1_loss,
             running_loss += loss.item()
         scheduler.step()
         running_loss_list.append(running_loss / len(train_data))
+
         if epoch % print_every == 0:
-            print("epoch=%d, loss=%0.5e, lr=%0.5e" % (epoch, running_loss / len(train_data),
-                                                      optimizer.param_groups[0]['lr']))
+            eval_running_loss = 0
+            for d in test_data:
+                d = d.to(device)
+                model.eval()
+                pred = model(d)
+                target = d.y
+                if with_borderless_loss:
+                    loss = borderless_loss(pred, target, loss_func, d, radius)
+                else:
+                    loss = loss_func()(pred, target)
+
+                eval_running_loss += loss.item()
+            print("epoch=%d, lr=%0.5e, train loss=%0.5f, test loss=%0.5f" % (epoch,
+                                                                             optimizer.param_groups[0]['lr'],
+                                                                             running_loss / len(train_data),
+                                                                             eval_running_loss/len(test_data)))
             torch.save(model.state_dict(), "models/model" + save_name + ".pth")
             np.save("models/loss" + save_name + ".npy", running_loss_list)
 

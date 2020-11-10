@@ -8,9 +8,9 @@ from torch_geometric.utils import (dropout_adj, add_self_loops, sort_edge_index,
 
 
 class UNet_general(nn.Module):
-    def __init__(self, estimator, params, requires_edge_weight=True, **kwargs):
+    def __init__(self, estimator, params, requires_edge_weight=True, act=F.relu, **kwargs):
         super().__init__()
-        self.act = F.relu
+        self.act = act
         self.estimator = estimator
         self.params = params
         self.kwargs = kwargs
